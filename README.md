@@ -1,6 +1,3 @@
-# Bus
-<<<<<<< HEAD
-
 **TODO: Add description**
 
 ## Installation
@@ -25,4 +22,3 @@ If [available in Hex](https://hex.pm/docs/publish), the package can be installed
 
 =======
 Pure Mqtt client written in Elixir
->>>>>>> 37ffb7978b3c5747700120e6239fdf5abec755f4
