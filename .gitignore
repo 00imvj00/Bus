@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # The directory Mix will write compiled artifacts to.
 /_build
 
@@ -14,4 +15,10 @@
 erl_crash.dump
 
 # Also ignore archive artifacts (built via "mix archive.build").
+=======
+/_build
+/cover
+/deps
+erl_crash.dump
+>>>>>>> 37ffb7978b3c5747700120e6239fdf5abec755f4
 *.ez
