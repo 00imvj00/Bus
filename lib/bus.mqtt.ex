@@ -4,6 +4,7 @@ defmodule Bus.Mqtt do
 
 	 alias Bus.Message
 	 alias Bus.Protocol.Packet
+	 alias Bus.IdProvider
 
 	  def start_link do
 	    GenServer.start_link(__MODULE__,[],[name: __MODULE__])
@@ -27,7 +28,7 @@ defmodule Bus.Mqtt do
 	  end
 
 	  def disconnect() do
-	  	
+	  	GenServer.cast( __MODULE__ , :disconnect)
 	  end
 
 	  def publish(topic,message,qos,dup,retain) do
@@ -51,9 +52,8 @@ defmodule Bus.Mqtt do
 	  	GenServer.cast( __MODULE__ , { :unsubscribe , opts })
 	  end
 
-	  def pingreq() do
-	  	opts = %{}
-	  	GenServer.cast( __MODULE__ , { :ping , opts })
+	  def pingreq do
+	  	GenServer.cast( __MODULE__ , :ping)
 	  end
 
 	  # connect to mqtt,
@@ -91,7 +91,7 @@ defmodule Bus.Mqtt do
 
   	 #define How to get ID. may be we need one process to manage ids, or Agent.
   	 #think and implement.
-  	 def handle_cast({:publish, opts}, _from, %{socket: socket} = state) do
+  	 def handle_cast({:publish, opts},%{socket: socket} = state) do
        
         topic  = opts |> Map.fetch!(:topic)
         msg    = opts |> Map.fetch!(:message)
@@ -104,7 +104,7 @@ defmodule Bus.Mqtt do
             0 ->
               Message.publish(topic, msg, dup, qos, retain)
             _ ->
-              id = opts |> Keyword.fetch!(:id)
+              id = IdProvider.get_id
               Message.publish(id, topic, msg, dup, qos, retain)
           end
 
@@ -114,7 +114,7 @@ defmodule Bus.Mqtt do
       end
 
 	  #we need to get id from agent here also.
-      def handle_cast({:subscribe, list_of_topics}, _from, %{socket: socket} = state) do
+      def handle_cast({:subscribe, list_of_topics}, %{socket: socket} = state) do
         
         id     = list_of_topics |> Map.fetch!(:id)
         topics = list_of_topics |> Map.fetch!(:topics)
@@ -126,7 +126,7 @@ defmodule Bus.Mqtt do
       end
 
       #get id from agent.
-      def handle_cast({:unsubscribe, opts}, _from, %{socket: socket} = state) do
+      def handle_cast({:unsubscribe, opts}, %{socket: socket} = state) do
         id     = opts |> Map.fetch!(:id)
         topics = opts |> Map.fetch!(:topics)
 
@@ -135,15 +135,17 @@ defmodule Bus.Mqtt do
         {:noreply, state}
       end
 
-      # def handle_cast(:ping, _from, %{socket: socket} = state) do
-      #   :ok = state.connection |> Connection.ping
-      #   {:reply, :ok, state}
-      # end
+      def handle_cast(:ping, %{socket: socket} = state) do
+        message = Message.ping_request
+        :gen_tcp.send(socket,Packet.encode(message))
+        {:noreply,state}
+      end
 
-      # def handle_call(:disconnect, _from, state) do
-      #   :ok = state.connection |> Connection.disconnect
-      #   {:reply, :ok, state}
-      # end
+      def handle_cast(:disconnect, %{socket: socket} = state) do
+        message = Message.disconnect
+        :gen_tcp.send(socket,Packet.encode(message))
+        {:noreply, state}
+      end
 
 
 
@@ -152,7 +154,7 @@ defmodule Bus.Mqtt do
   	 #get message from here, decode it and process it.
   	 def handle_info({:tcp, socket, msg}, %{socket: socket} = state) do
   	 	IO.inspect "Packet Arrived."
-  	 	IO.inspect msg
+  	 	IO.inspect Packet.decode(msg)
   	 	
   	 	:inet.setopts(socket, active: :once)
   	 	{:noreply, state}
