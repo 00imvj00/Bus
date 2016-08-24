@@ -1,5 +1,5 @@
 defmodule Bus.Mqtt do
-	 use GenServer
+	 import GenServer
 	 require Logger 
 
 	 alias Bus.Message
@@ -9,16 +9,21 @@ defmodule Bus.Mqtt do
 	    GenServer.start_link(__MODULE__,[],[name: __MODULE__])
 	  end
 
-
-	  defp connect() do
-	  	host = 'localhost'
-	  	port = 1883
-	  	opts = [:binary, active: :once]
-	    case :gen_tcp.connect(host, port, opts) do
-	    	{:ok, socket} ->
-	    		{:ok,socket}
-	    	_ 			  -> {:error,"Error"}
-	    end
+	  #store whole these details in state.
+	  def connect() do
+	  	opts = %{host: 'localhost',
+	  			 port: 1883,
+	  			 client_id: "123",
+	  			  username: "VJ",
+	  			   password: "asdf",
+	  			    will_topic: "",
+	  			    will_message: "",
+	  			     will_qos: 1,
+	  			     will_retain: 0,
+	  			     clean_session: 1,
+	  			     keep_alive: 100
+	  			}
+    	GenServer.call( __MODULE__ , { :connect , opts })
 	  end
 
 	  def disconnect() do
@@ -43,65 +48,34 @@ defmodule Bus.Mqtt do
 	  # connect to mqtt,
 	  # take params from config.
 	  def init([]) do
-
-    	case connect() do
-    		{:ok,socket} ->
-    			IO.inspect "TCP connected."
-    			
-    			opts = [client_id: "123", username: "VJ", password: "asdf", will_topic: "",will_message: "", will_qos: 1,will_retain: 0,clean_session: 1, keep_alive: 100]
-    		
-    			client_id     = opts |> Keyword.fetch!(:client_id)
-		        username      = opts |> Keyword.get(:username, "")
-		        password      = opts |> Keyword.get(:password, "")
-		        will_topic    = opts |> Keyword.get(:will_topic, "")
-		        will_message  = opts |> Keyword.get(:will_message, "")
-		        will_qos      = opts |> Keyword.get(:will_qos, 0)
-		        will_retain   = opts |> Keyword.get(:will_retain, 0)
-		        clean_session = opts |> Keyword.get(:clean_session, 1)
-		        keep_alive    = opts |> Keyword.get(:keep_alive, 100)
-
-		        message = Message.connect(client_id, username, password,
-		                                  will_topic, will_message, will_qos,
-		                                  will_retain, clean_session, keep_alive)
-		        packet = Packet.encode(message)
-		        IO.inspect packet
-		        :gen_tcp.send(socket,packet)
-    			{:ok, %{socket: socket}}
-    		
-    		{:error,Error}->
-    			IO.inspect "Error while connecting TCP."
-    			{:error,Error}
-    	end
+	  	IO.inspect "Init." 
+	  	{:ok ,%{socket: nil}}
   	  end
 
-  	 #all the messages will go from gere.
-  	 #process , encode and then only call this one.
-  	 # def handle_cast({:send_packet,data},%{socket: socket} = state) do
-  	 # 	:gen_tcp.send(socket,data)
-  	 # 	IO.inspect "Packet Sent."
-  	 # 	{:noreply,state}
-  	 # end
+  	 def handle_call({ :connect ,opts},_From ,%{socket: skt} = state) do
 
-  	 def handle_call({:connect,opts},%{socket: socket} = state) do
+  	 	host          = opts |> Map.fetch!(:host)
+        port          = opts |> Map.fetch!(:port)
 
-  	 	# host          = opts |> Keyword.fetch!(:host)
-        # port          = opts |> Keyword.fetch!(:port)
+        client_id     = opts |> Map.fetch!(:client_id)
+        username      = opts |> Map.get(:username, "")
+        password      = opts |> Map.get(:password, "")
+        will_topic    = opts |> Map.get(:will_topic, "")
+        will_message  = opts |> Map.get(:will_message, "")
+        will_qos      = opts |> Map.get(:will_qos, 0)
+        will_retain   = opts |> Map.get(:will_retain, 0)
+        clean_session = opts |> Map.get(:clean_session, 1)
+        keep_alive    = opts |> Map.get(:keep_alive, 100)
 
-        client_id     = opts |> Keyword.fetch!(:client_id)
-        username      = opts |> Keyword.get(:username, "")
-        password      = opts |> Keyword.get(:password, "")
-        will_topic    = opts |> Keyword.get(:will_topic, "")
-        will_message  = opts |> Keyword.get(:will_message, "")
-        will_qos      = opts |> Keyword.get(:will_qos, 0)
-        will_retain   = opts |> Keyword.get(:will_retain, 0)
-        clean_session = opts |> Keyword.get(:clean_session, 1)
-        keep_alive    = opts |> Keyword.get(:keep_alive, 100)
-
-        message = Message.connect(client_id, username, password,
+        message = Packet.encode(Message.connect(client_id, username, password,
                                   will_topic, will_message, will_qos,
-                                  will_retain, clean_session, keep_alive)
+                                  will_retain, clean_session, keep_alive))
+
+        tcp_opts = [:binary, active: :once]
+	    {:ok, socket} = :gen_tcp.connect(host, port, tcp_opts)
         :gen_tcp.send(socket,message)
-        {:reply , "cool" , state}
+
+        {:reply , %{:sent} , %{socket: socket}}
   	 end
 
 
@@ -116,6 +90,7 @@ defmodule Bus.Mqtt do
   	 	{:noreply, state}
   	 end
 
+  	 #This will call when tcp will be closed, try to reconnect.
   	 def handle_info({:tcp_closed, socket}, %{socket: socket} = state) do
   	 	IO.inspect "TCP closed."
   	 	{:noreply, state}
