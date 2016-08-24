@@ -59,7 +59,7 @@ defmodule Bus.Mqtt do
 	  # connect to mqtt,
 	  # take params from config.
 	  def init([]) do
-	  	IO.inspect "Init." 
+	  	IO.inspect "Mqtt Client Online." 
 	  	{:ok ,%{socket: nil}}
   	  end
 

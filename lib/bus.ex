@@ -7,6 +7,7 @@ defmodule Bus do
 
     children = [
       worker(Bus.Mqtt, []),
+      worker(Bus.IdProvider,[])
     ]
 
     opts = [strategy: :one_for_one, name: Bus.Supervisor]
