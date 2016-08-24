@@ -30,19 +30,30 @@ defmodule Bus.Mqtt do
 	  	
 	  end
 
-	  def publish() do
+	  def publish(topic,message,qos,dup,retain) do
+	  	opts = %{
+	  		topic: topic,
+	  		message: message,
+	  		dup: dup,
+	  		qos: qos,
+	  		retain: retain
+	  	}
+	  	GenServer.cast( __MODULE__ , { :publish , opts })
 	  end
 
-	  def subscribe() do
-	  	
+	  # list_of_data = [{topic,qos},{topic,qos}]
+	  def subscribe(list_of_data) do
+	  	GenServer.cast( __MODULE__ , { :subscribe , list_of_data})
 	  end
 
 	  def unsubscribe() do
-	  	
+	  	opts = %{}
+	  	GenServer.cast( __MODULE__ , { :unsubscribe , opts })
 	  end
 
 	  def pingreq() do
-	  	
+	  	opts = %{}
+	  	GenServer.cast( __MODULE__ , { :ping , opts })
 	  end
 
 	  # connect to mqtt,
@@ -103,11 +114,11 @@ defmodule Bus.Mqtt do
       end
 
 	  #we need to get id from agent here also.
-      def handle_cast({:subscribe, opts}, _from, %{socket: socket} = state) do
+      def handle_cast({:subscribe, list_of_topics}, _from, %{socket: socket} = state) do
         
-        id     = opts |> Map.fetch!(:id)
-        topics = opts |> Map.fetch!(:topics)
-        qoses  = opts |> Map.fetch!(:qoses)
+        id     = list_of_topics |> Map.fetch!(:id)
+        topics = list_of_topics |> Map.fetch!(:topics)
+        qoses  = list_of_topics |> Map.fetch!(:qoses)
 
         message = Message.subscribe(id, topics, qoses)
     	:gen_tcp.send(socket,Packet.encode(message))
