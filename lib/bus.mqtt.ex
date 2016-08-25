@@ -12,6 +12,7 @@ defmodule Bus.Mqtt do
 
 	  #store whole these details in state.
     #create arguments , to get info from.
+    #argument can be struct. 
 	  def connect() do
 	  	opts = %{host: 'localhost',
 	  			 port: 1883,
@@ -149,7 +150,7 @@ defmodule Bus.Mqtt do
   	 def handle_info({:tcp, socket, msg}, %{socket: socket} = state) do
   	 	IO.inspect "Packet Arrived."
   	 	IO.inspect Packet.decode(msg)
-  	 	
+  	
   	 	:inet.setopts(socket, active: :once)
   	 	{:noreply, state}
   	 end
