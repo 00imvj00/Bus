@@ -11,6 +11,7 @@ defmodule Bus.Mqtt do
 	  end
 
 	  #store whole these details in state.
+    #create arguments , to get info from.
 	  def connect() do
 	  	opts = %{host: 'localhost',
 	  			 port: 1883,
@@ -43,13 +44,13 @@ defmodule Bus.Mqtt do
 	  end
 
 	  # list_of_data = [{topic,qos},{topic,qos}]
-	  def subscribe(list_of_data) do
-	  	GenServer.cast( __MODULE__ , { :subscribe , list_of_data})
+	  def subscribe() do
+	  	GenServer.cast( __MODULE__ , { :subscribe , ["a","b"],[1,1]})
 	  end
 
-	  def unsubscribe() do
-	  	opts = %{}
-	  	GenServer.cast( __MODULE__ , { :unsubscribe , opts })
+    #check if arg is list or not.
+	  def unsubscribe(list_of_topics) do
+	  	GenServer.cast( __MODULE__ , { :unsubscribe , list_of_topics})
 	  end
 
 	  def pingreq do
@@ -93,11 +94,11 @@ defmodule Bus.Mqtt do
   	 #think and implement.
   	 def handle_cast({:publish, opts},%{socket: socket} = state) do
        
-        topic  = opts |> Map.fetch!(:topic)
-        msg    = opts |> Map.fetch!(:message)
-        dup    = opts |> Map.fetch!(:dup)
-        qos    = opts |> Map.fetch!(:qos)
-        retain = opts |> Map.fetch!(:retain)
+        topic  = opts |> Map.fetch!(:topic) #""
+        msg    = opts |> Map.fetch!(:message) #""
+        dup    = opts |> Map.fetch!(:dup) #bool
+        qos    = opts |> Map.fetch!(:qos) #int
+        retain = opts |> Map.fetch!(:retain) #bool
 
         message =
           case qos do
@@ -113,23 +114,16 @@ defmodule Bus.Mqtt do
 
       end
 
-	  #we need to get id from agent here also.
-      def handle_cast({:subscribe, list_of_topics}, %{socket: socket} = state) do
-        
-        id     = list_of_topics |> Map.fetch!(:id)
-        topics = list_of_topics |> Map.fetch!(:topics)
-        qoses  = list_of_topics |> Map.fetch!(:qoses)
-
+      def handle_cast({:subscribe,topics,qoses}, %{socket: socket} = state) do   
+        id     = IdProvider.get_id
         message = Message.subscribe(id, topics, qoses)
-    	:gen_tcp.send(socket,Packet.encode(message))
+    	  :gen_tcp.send(socket,Packet.encode(message))
         {:noreply, state}
       end
 
       #get id from agent.
-      def handle_cast({:unsubscribe, opts}, %{socket: socket} = state) do
-        id     = opts |> Map.fetch!(:id)
-        topics = opts |> Map.fetch!(:topics)
-
+      def handle_cast({:unsubscribe, topics}, %{socket: socket} = state) do
+        id      = IdProvider.get_id
         message = Message.unsubscribe(id, topics)
         :gen_tcp.send(socket,Packet.encode(message))
         {:noreply, state}
