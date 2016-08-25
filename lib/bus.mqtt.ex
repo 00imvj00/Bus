@@ -13,7 +13,7 @@ defmodule Bus.Mqtt do
 	  #store whole these details in state.
     #create arguments , to get info from.
     #argument can be struct. 
-    
+
 	  def connect() do
 	  	opts = %{host: 'localhost',
 	  			 port: 1883,
@@ -149,9 +149,21 @@ defmodule Bus.Mqtt do
   	 #this will be the entry point of all the tcp messages,
   	 #get message from here, decode it and process it.
   	 def handle_info({:tcp, socket, msg}, %{socket: socket} = state) do
-  	 	IO.inspect "Packet Arrived."
-  	 	IO.inspect Packet.decode(msg)
-  	
+      %{message: message,remainder: remainder} = Packet.decode msg
+  	 	case message do
+         %Bus.Message.ConnAck{} ->
+            Bus.Callback.on_connect("CONN SUCCESS")
+         %Bus.Message.PubAck{} -> 
+            Bus.Callback.on_publish("PUBlish SUCCESS")
+         %Bus.Message.PubRec{} ->
+          #send pubrel
+         %Bus.Message.PubComp{} ->
+         %Bus.Message.SubAck{} ->
+         %Bus.Message.PingResp{} ->
+         %Bus.Message.UnsubAck{} ->
+         _ ->
+            Logger.debug "Error while receiving packet."
+      end
   	 	:inet.setopts(socket, active: :once)
   	 	{:noreply, state}
   	 end
