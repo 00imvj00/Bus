@@ -25,7 +25,7 @@ defmodule Bus.Mqtt do
 	  			     will_qos: 1,
 	  			     will_retain: 0,
 	  			     clean_session: 1,
-	  			     keep_alive: 100
+	  			     keep_alive: 10
 	  			}
     	GenServer.call( __MODULE__ , { :connect , opts })
 	  end
@@ -85,16 +85,21 @@ defmodule Bus.Mqtt do
                                   will_topic, will_message, will_qos,
                                   will_retain, clean_session, keep_alive))
 
-        tcp_opts = [:binary, active: :once]
-	    {:ok, socket} = :gen_tcp.connect(host, port, tcp_opts)
-        :gen_tcp.send(socket,message)
+        timeout = if keep_alive == 0 do
+                       :infinity
+                  else
+                       (keep_alive*1000) - 5; # we will send pingreq before 5 sec of timeout.
+                  end
 
-        {:reply , {:sent} , %{socket: socket}}
+        tcp_opts = [:binary, active: :once]
+	      {:ok, socket} = :gen_tcp.connect(host, port, tcp_opts)
+        :gen_tcp.send(socket,message)
+        {:reply , {:sent} , %{socket: socket, timeout: timeout},timeout}
   	 end
 
   	 #define How to get ID. may be we need one process to manage ids, or Agent.
   	 #think and implement.
-  	 def handle_cast({:publish, opts},%{socket: socket} = state) do
+  	 def handle_cast({:publish, opts},%{socket: socket, timeout: timeout} = state) do
        
         topic  = opts |> Map.fetch!(:topic) #""
         msg    = opts |> Map.fetch!(:message) #""
@@ -112,54 +117,52 @@ defmodule Bus.Mqtt do
           end
 
         :gen_tcp.send(socket,Packet.encode(message))
-        {:noreply, state}
+        {:noreply, state,timeout}
 
       end
 
-      def handle_cast({:subscribe,topics,qoses}, %{socket: socket} = state) do   
+      def handle_cast({:subscribe,topics,qoses}, %{socket: socket, timeout: timeout} = state) do   
         id     = IdProvider.get_id
         message = Message.subscribe(id, topics, qoses)
     	  :gen_tcp.send(socket,Packet.encode(message))
-        {:noreply, state}
+        {:noreply, state ,timeout}
       end
 
       #get id from agent.
-      def handle_cast({:unsubscribe, topics}, %{socket: socket} = state) do
+      def handle_cast({:unsubscribe, topics}, %{socket: socket,timeout: timeout} = state) do
         id      = IdProvider.get_id
         message = Message.unsubscribe(id, topics)
         :gen_tcp.send(socket,Packet.encode(message))
-        {:noreply, state}
+        {:noreply, state,timeout}
       end
 
-      def handle_cast(:ping, %{socket: socket} = state) do
+      def handle_cast(:ping, %{socket: socket, timeout: timeout} = state) do
         message = Message.ping_request
         :gen_tcp.send(socket,Packet.encode(message))
-        {:noreply,state}
+        {:noreply,state,timeout}
       end
 
-      def handle_cast(:disconnect, %{socket: socket} = state) do
+      def handle_cast(:disconnect, %{socket: socket, timeout: timeout} = state) do
         message = Message.disconnect
         :gen_tcp.send(socket,Packet.encode(message))
-        {:noreply, state}
+        {:noreply, state,timeout}
       end
-
-
 
   	 #all the messages will from tcp will be received here.
   	 #this will be the entry point of all the tcp messages,
   	 #get message from here, decode it and process it.
-  	 def handle_info({:tcp, socket, msg}, %{socket: socket} = state) do
+  	 def handle_info({:tcp, socket, msg}, %{socket: socket,timeout: timeout} = state) do
       %{message: message,remainder: remainder} = Packet.decode msg
   	 	case message do
          %Bus.Message.ConnAck{} ->
             Bus.Callback.on_connect({:ok,"connection successful"})
          %Bus.Message.PubAck{} -> #this will only call when QoS = 1
-            Bus.Callback.on_publish({:ok,"publish successful"})
+            Bus.Callback.on_publish({:ok,1,"publish successful"})
          %Bus.Message.PubRec{id: id} -> #this will only call when QoS = 2
             pub_rel_msg = Message.publish_release(id)
             :gen_tcp.send(socket,Packet.encode(pub_rel_msg))
          %Bus.Message.PubComp{} -> #this will only call when QoS = 2
-            Bus.Callback.on_publish({:ok,"publish successful"})
+            Bus.Callback.on_publish({:ok,2,"publish successful"})
          %Bus.Message.SubAck{} ->
             Bus.Callback.on_subscribe({:ok,"subscribe successful"})
          %Bus.Message.PingResp{} -> #this is internal use.increase the timeout.
@@ -170,8 +173,15 @@ defmodule Bus.Mqtt do
             Logger.debug "Error while receiving packet."
       end
   	 	:inet.setopts(socket, active: :once)
-  	 	{:noreply, state}
+  	 	{:noreply, state,timeout}
   	 end
+
+     def handle_info(:timeout,%{socket: socket,timeout: timeout} = state) do
+         IO.inspect "Timeout occurs."
+         message = Message.ping_request
+         :gen_tcp.send(socket,Packet.encode(message))
+         {:noreply,state,timeout}
+     end
 
   	 #This will call when tcp will be closed, try to reconnect.
   	 def handle_info({:tcp_closed, socket}, %{socket: socket} = state) do
