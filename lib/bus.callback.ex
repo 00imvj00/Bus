@@ -8,4 +8,12 @@ defmodule Bus.Callback do
 		IO.inspect data
 	end
 
+	def on_subscribe(data) do
+		IO.inspect data
+	end
+
+	def on_unsubscribe(data) do
+		IO.inspect data
+	end
+
 end

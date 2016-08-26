@@ -152,15 +152,20 @@ defmodule Bus.Mqtt do
       %{message: message,remainder: remainder} = Packet.decode msg
   	 	case message do
          %Bus.Message.ConnAck{} ->
-            Bus.Callback.on_connect("CONN SUCCESS")
-         %Bus.Message.PubAck{} -> 
-            Bus.Callback.on_publish("PUBlish SUCCESS")
-         %Bus.Message.PubRec{} ->
-          #send pubrel
-         %Bus.Message.PubComp{} ->
+            Bus.Callback.on_connect({:ok,"connection successful"})
+         %Bus.Message.PubAck{} -> #this will only call when QoS = 1
+            Bus.Callback.on_publish({:ok,"publish successful"})
+         %Bus.Message.PubRec{id: id} -> #this will only call when QoS = 2
+            pub_rel_msg = Message.publish_release(id)
+            :gen_tcp.send(socket,Packet.encode(pub_rel_msg))
+         %Bus.Message.PubComp{} -> #this will only call when QoS = 2
+            Bus.Callback.on_publish({:ok,"publish successful"})
          %Bus.Message.SubAck{} ->
-         %Bus.Message.PingResp{} ->
+            Bus.Callback.on_subscribe({:ok,"subscribe successful"})
+         %Bus.Message.PingResp{} -> #this is internal use.increase the timeout.
+            IO.inspect "Ping resp came."
          %Bus.Message.UnsubAck{} ->
+            Bus.Callback.on_unsubscribe({:ok,"unsubscribe successful"})
          _ ->
             Logger.debug "Error while receiving packet."
       end
