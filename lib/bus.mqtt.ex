@@ -6,6 +6,12 @@ defmodule Bus.Mqtt do
 	 alias Bus.Protocol.Packet
 	 alias Bus.IdProvider
 
+   @initial_state %{
+        socket: nil,
+        timeout: 0,
+        auto_reconnect: false 
+   }
+
 	  def start_link do
 	    GenServer.start_link(__MODULE__,[],[name: __MODULE__])
 	  end
