@@ -22,7 +22,17 @@ defmodule Bus.Mqtt do
     # connect to mqtt,
     # take params from config.
     def init(state) do
-      {:ok,state}
+      if Application.get_env(:bus,:auto_connect, true) do
+          case connect(:auto) do
+               {:ok,socket,timeout,auto_reconnect} ->
+                   IO.inspect "Auto connected."
+                   {:ok,%{socket: socket,timeout: timeout, auto_reconnect: auto_reconnect}}
+                _ ->
+                   {:ok,state}
+          end
+      else
+          {:ok,state}
+      end
     end
 
 
@@ -47,16 +57,46 @@ defmodule Bus.Mqtt do
         GenServer.call(__MODULE__, {:connect,opts})
     end
 
+    #auto connect.
+    def connect(:auto) do
+                 host = Application.get_env(:bus, :host, 'localhost')
+                 port = Application.get_env(:bus, :port, 1883)
+                 client_id = Application.get_env(:bus, :client_id, 1)
+                 username = Application.get_env(:bus, :username, "")
+                 password = Application.get_env(:bus, :password, "")
+                 will_topic = ""
+                 will_message = ""
+                 will_qos = 1
+                 will_retain = 0
+                 clean_session = 1
+                 keep_alive = Application.get_env(:bus, :keep_alive, 120) #sec
+                 auto_reconnect = Application.get_env(:bus, :auto_reconnect, false)
+
+                 message = Packet.encode(Message.connect(client_id, username, password,
+                                  will_topic, will_message, will_qos,
+                                  will_retain, clean_session, keep_alive))
+
+                 timeout = get_timeout(keep_alive)
+
+                 tcp_opts = [:binary, active: :once]
+                 tcp_time_out = 10_000 #milliseconds
+
+                 case :gen_tcp.connect(host, port, tcp_opts,tcp_time_out) do
+                    {:ok, socket}    ->
+                        :gen_tcp.send(socket,message)
+                        {:ok, socket,timeout,auto_reconnect}
+                      {:error, Reason} ->
+                            IO.inspect "Error while connecting."
+                            IO.inspect Reason
+                            {:error,Reason}
+                  end
+    end
+
     def handle_call({:connect,opts},_From,state) do
         #required
         host          = opts |> Map.fetch!(:host)
         port          = opts |> Map.fetch!(:port)
-        
-        temp_client_id = opts |> Map.fetch!(:client_id)
-        client_id = case is_number(temp_client_id) do
-                       true -> to_string(temp_client_id) 
-                       _    -> temp_client_id
-                    end      
+        client_id     = opts |> Map.fetch!(:client_id) |> get_client_id
         #optional
         username      = opts |> Map.get(:username, "")
         password      = opts |> Map.get(:password, "")
@@ -72,11 +112,7 @@ defmodule Bus.Mqtt do
                                   will_topic, will_message, will_qos,
                                   will_retain, clean_session, keep_alive))
 
-        timeout = if keep_alive == 0 do
-                       :infinity
-                  else
-                       (keep_alive*1000) - 5; # we will send pingreq before 5 sec of timeout.
-                  end
+        timeout = get_timeout(keep_alive)
 
         tcp_opts = [:binary, active: :once]
         tcp_time_out = 10_000 #milliseconds
@@ -91,7 +127,7 @@ defmodule Bus.Mqtt do
                   {:reply , {:not_connected}, state}
         end
 
-     end
+    end
 
 
 	  def disconnect() do
@@ -223,5 +259,21 @@ defmodule Bus.Mqtt do
   	 def code_change(_old_ver,state,_extra) do
   	 	{:ok, state}
   	 end
+     
+     #if client id is int , it will convert to string.
+     defp get_client_id(id) do
+      case is_number(id) do
+            true -> to_string(id) 
+            _    -> id
+      end 
+     end
+
+     defp get_timeout(keep_alive) do
+            if keep_alive == 0 do
+                :infinity
+            else
+                (keep_alive*1000) - 5; # we will send pingreq before 5 sec of timeout.
+            end
+     end
 
 end
