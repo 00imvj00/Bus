@@ -17,8 +17,8 @@ use Mix.Config
      		keep_alive: 100,
      		username: "",
      		password: "",
-     		auto_reconnect: false,
-     		auto_connect: false
+     		auto_reconnect: true,
+     		auto_connect: true
 #
 # And access this configuration in your application as:
 #

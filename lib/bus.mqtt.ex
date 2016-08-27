@@ -40,21 +40,7 @@ defmodule Bus.Mqtt do
     #create arguments , to get info from.
     #argument can be struct. 
     def connect() do
-        opts = %{
-                 host: Application.get_env(:bus, :host, 'localhost'),
-                 port: Application.get_env(:bus, :port, 1883),
-                 client_id: Application.get_env(:bus, :client_id, 1),
-                 username: Application.get_env(:bus, :username, ""),
-                 password: Application.get_env(:bus, :password, ""),
-                 will_topic: "",
-                 will_message: "",
-                 will_qos: 1,
-                 will_retain: 0,
-                 clean_session: 1,
-                 keep_alive: Application.get_env(:bus, :keep_alive, 120), #sec
-                 auto_reconnect: Application.get_env(:bus, :auto_reconnect, false)
-            }
-        GenServer.call(__MODULE__, {:connect,opts})
+        GenServer.call(__MODULE__, {:connect})
     end
 
     #auto connect.
@@ -85,48 +71,24 @@ defmodule Bus.Mqtt do
                     {:ok, socket}    ->
                         :gen_tcp.send(socket,message)
                         {:ok, socket,timeout,auto_reconnect}
-                      {:error, Reason} ->
-                            IO.inspect "Error while connecting."
-                            IO.inspect Reason
-                            {:error,Reason}
+                    {:error, :econnrefused} ->
+                        IO.inspect "Could not reach to server."
+                        {:error,"could not reach to server."}
+                    {:error, Reason} ->
+                        IO.inspect "Error while connecting."
+                        IO.inspect Reason
+                        {:error,Reason}
                   end
     end
 
     def handle_call({:connect,opts},_From,state) do
-        #required
-        host          = opts |> Map.fetch!(:host)
-        port          = opts |> Map.fetch!(:port)
-        client_id     = opts |> Map.fetch!(:client_id) |> get_client_id
-        #optional
-        username      = opts |> Map.get(:username, "")
-        password      = opts |> Map.get(:password, "")
-        will_topic    = opts |> Map.get(:will_topic, "")
-        will_message  = opts |> Map.get(:will_message, "")
-        will_qos      = opts |> Map.get(:will_qos, 0)
-        will_retain   = opts |> Map.get(:will_retain, 0)
-        clean_session = opts |> Map.get(:clean_session, 1)
-        keep_alive    = opts |> Map.get(:keep_alive, 120)
-        auto_reconnect = opts |> Map.get(:auto_reconnect,false)
-
-        message = Packet.encode(Message.connect(client_id, username, password,
-                                  will_topic, will_message, will_qos,
-                                  will_retain, clean_session, keep_alive))
-
-        timeout = get_timeout(keep_alive)
-
-        tcp_opts = [:binary, active: :once]
-        tcp_time_out = 10_000 #milliseconds
-        
-        case :gen_tcp.connect(host, port, tcp_opts,tcp_time_out) do
-            {:ok, socket}    ->
-                  :gen_tcp.send(socket,message)
-                  {:reply , :connected , %{socket: socket, timeout: timeout, auto_reconnect: auto_reconnect},timeout}
-            {:error, Reason} ->
-                  IO.inspect "Error while connecting."
-                  IO.inspect Reason
-                  {:reply , {:not_connected}, state}
-        end
-
+        case connect(:auto) do
+               {:ok,socket,timeout,auto_reconnect} ->
+                   IO.inspect "Connected."
+                   {:ok,%{socket: socket,timeout: timeout, auto_reconnect: auto_reconnect}}
+                _ ->
+                   {:ok,state}
+          end
     end
 
 
@@ -247,9 +209,10 @@ defmodule Bus.Mqtt do
      end
 
   	 #This will call when tcp will be closed, try to reconnect.
-  	 def handle_info({:tcp_closed, socket}, %{socket: socket} = state) do
-  	 	IO.inspect "TCP closed."
-  	 	{:noreply, state}
+  	 def handle_info({:tcp_closed, socket}, %{socket: socket,timeout: timeout,auto_reconnect: auto_reconnect} = state) do
+      if auto_reconnect == true do
+        reconnect()
+       end
   	 end
 
   	 def terminate(reason,state) do
@@ -268,6 +231,17 @@ defmodule Bus.Mqtt do
       end 
      end
 
+     defp reconnect() do
+         IO.inspect "Reconnection in process."
+        case connect(:auto) do
+               {:ok,socket,timeout,auto_reconnect} ->
+                   IO.inspect "Auto Reconnection successful."
+                   {:noreply,%{socket: socket,timeout: timeout, auto_reconnect: auto_reconnect}}
+                _ ->
+                   :timer.sleep(2000)
+                   reconnect()
+          end
+     end
      defp get_timeout(keep_alive) do
             if keep_alive == 0 do
                 :infinity
@@ -275,5 +249,4 @@ defmodule Bus.Mqtt do
                 (keep_alive*1000) - 5; # we will send pingreq before 5 sec of timeout.
             end
      end
-
 end
