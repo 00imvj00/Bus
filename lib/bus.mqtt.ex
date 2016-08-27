@@ -11,7 +11,8 @@ defmodule Bus.Mqtt do
    @initial_state %{
         socket: nil, #to send & receive data
         timeout: 0,  #mqtt keep_alive timeout
-        auto_reconnect: false #reconnect auto,if disconnect.
+        auto_reconnect: false, #reconnect auto,if disconnect.
+        disconnected: true
    }
 
 	  def start_link do
@@ -26,7 +27,7 @@ defmodule Bus.Mqtt do
           case connect(:auto) do
                {:ok,socket,timeout,auto_reconnect} ->
                    IO.inspect "Auto connected."
-                   {:ok,%{socket: socket,timeout: timeout, auto_reconnect: auto_reconnect}}
+                   {:ok,%{socket: socket,timeout: timeout, auto_reconnect: auto_reconnect, disconnected: false}}
                 _ ->
                    {:ok,state}
           end
@@ -34,11 +35,7 @@ defmodule Bus.Mqtt do
           {:ok,state}
       end
     end
-
-
-    #store whole these details in state.
-    #create arguments , to get info from.
-    #argument can be struct. 
+ 
     def connect() do
         GenServer.call(__MODULE__, {:connect})
     end
@@ -85,7 +82,7 @@ defmodule Bus.Mqtt do
         case connect(:auto) do
                {:ok,socket,timeout,auto_reconnect} ->
                    IO.inspect "Connected."
-                   {:ok,%{socket: socket,timeout: timeout, auto_reconnect: auto_reconnect}}
+                   {:ok,%{socket: socket,timeout: timeout, auto_reconnect: auto_reconnect, disconnected: false}}
                 _ ->
                    {:ok,state}
           end
@@ -170,7 +167,7 @@ defmodule Bus.Mqtt do
       def handle_cast(:disconnect, %{socket: socket, timeout: timeout} = state) do
         message = Message.disconnect
         :gen_tcp.send(socket,Packet.encode(message))
-        {:noreply, state,timeout}
+        {:noreply, %{state | disconnected: true},timeout}
       end
 
   	 #all the messages will from tcp will be received here.
@@ -202,27 +199,18 @@ defmodule Bus.Mqtt do
   	 end
 
      def handle_info(:timeout,%{socket: socket,timeout: timeout} = state) do
-         IO.inspect "Timeout occurs."
          message = Message.ping_request
          :gen_tcp.send(socket,Packet.encode(message))
          {:noreply,state,timeout}
      end
 
   	 #This will call when tcp will be closed, try to reconnect.
-  	 def handle_info({:tcp_closed, socket}, %{socket: socket,timeout: timeout,auto_reconnect: auto_reconnect} = state) do
-      if auto_reconnect == true do
-        reconnect()
+  	 def handle_info({:tcp_closed, socket}, %{socket: socket,timeout: timeout,auto_reconnect: auto_reconnect, disconnected: disconnected} = state) do
+      if auto_reconnect == true and disconnected == false do
+          reconnect()
        end
   	 end
 
-  	 def terminate(reason,state) do
-  	 	:ok
-  	 end
-
-  	 def code_change(_old_ver,state,_extra) do
-  	 	{:ok, state}
-  	 end
-     
      #if client id is int , it will convert to string.
      defp get_client_id(id) do
       case is_number(id) do
@@ -236,7 +224,7 @@ defmodule Bus.Mqtt do
         case connect(:auto) do
                {:ok,socket,timeout,auto_reconnect} ->
                    IO.inspect "Auto Reconnection successful."
-                   {:noreply,%{socket: socket,timeout: timeout, auto_reconnect: auto_reconnect}}
+                   {:noreply,%{socket: socket,timeout: timeout, auto_reconnect: auto_reconnect, disconnected: false}}
                 _ ->
                    :timer.sleep(2000)
                    reconnect()
@@ -248,5 +236,13 @@ defmodule Bus.Mqtt do
             else
                 (keep_alive*1000) - 5; # we will send pingreq before 5 sec of timeout.
             end
+     end
+
+     def terminate(reason,state) do
+      :ok
+     end
+
+     def code_change(_old_ver,state,_extra) do
+      {:ok, state}
      end
 end
