@@ -10,7 +10,14 @@ use Mix.Config
 
 # You can configure for your application as:
 #
-#     config :bus, key: :value
+     config :bus, 
+     		host: 'localhost',
+     		port: 1883,
+     		client_id: "1", #needs to be string.
+     		keep_alive: 100,
+     		username: "",
+     		password: "",
+     		auto_reconnect: false
 #
 # And access this configuration in your application as:
 #

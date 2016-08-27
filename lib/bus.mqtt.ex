@@ -6,35 +6,93 @@ defmodule Bus.Mqtt do
 	 alias Bus.Protocol.Packet
 	 alias Bus.IdProvider
 
+   #if possible, add Id provider map here only in this state.
+   #then it will be so independent of other process.
    @initial_state %{
-        socket: nil,
-        timeout: 0,
-        auto_reconnect: false 
+        socket: nil, #to send & receive data
+        timeout: 0,  #mqtt keep_alive timeout
+        auto_reconnect: false #reconnect auto,if disconnect.
    }
 
 	  def start_link do
-	    GenServer.start_link(__MODULE__,[],[name: __MODULE__])
+	    GenServer.start_link(__MODULE__,@initial_state,[name: __MODULE__])
 	  end
 
-	  #store whole these details in state.
+
+    # connect to mqtt,
+    # take params from config.
+    def init(state) do
+      {:ok,state}
+    end
+
+
+    #store whole these details in state.
     #create arguments , to get info from.
     #argument can be struct. 
+    def connect() do
+        opts = %{
+                 host: Application.get_env(:bus, :host, 'localhost'),
+                 port: Application.get_env(:bus, :port, 1883),
+                 client_id: Application.get_env(:bus, :client_id, 1),
+                 username: Application.get_env(:bus, :username, ""),
+                 password: Application.get_env(:bus, :password, ""),
+                 will_topic: "",
+                 will_message: "",
+                 will_qos: 1,
+                 will_retain: 0,
+                 clean_session: 1,
+                 keep_alive: Application.get_env(:bus, :keep_alive, 120), #sec
+                 auto_reconnect: Application.get_env(:bus, :auto_reconnect, false)
+            }
+        GenServer.call(__MODULE__, {:connect,opts})
+    end
 
-	  def connect() do
-	  	opts = %{host: 'localhost',
-	  			 port: 1883,
-	  			 client_id: "123",
-	  			  username: "VJ",
-	  			   password: "asdf",
-	  			    will_topic: "",
-	  			    will_message: "",
-	  			     will_qos: 1,
-	  			     will_retain: 0,
-	  			     clean_session: 1,
-	  			     keep_alive: 10
-	  			}
-    	GenServer.call( __MODULE__ , { :connect , opts })
-	  end
+    def handle_call({:connect,opts},_From,state) do
+        #required
+        host          = opts |> Map.fetch!(:host)
+        port          = opts |> Map.fetch!(:port)
+        
+        temp_client_id = opts |> Map.fetch!(:client_id)
+        client_id = case is_number(temp_client_id) do
+                       true -> to_string(temp_client_id) 
+                       _    -> temp_client_id
+                    end      
+        #optional
+        username      = opts |> Map.get(:username, "")
+        password      = opts |> Map.get(:password, "")
+        will_topic    = opts |> Map.get(:will_topic, "")
+        will_message  = opts |> Map.get(:will_message, "")
+        will_qos      = opts |> Map.get(:will_qos, 0)
+        will_retain   = opts |> Map.get(:will_retain, 0)
+        clean_session = opts |> Map.get(:clean_session, 1)
+        keep_alive    = opts |> Map.get(:keep_alive, 120)
+        auto_reconnect = opts |> Map.get(:auto_reconnect,false)
+
+        message = Packet.encode(Message.connect(client_id, username, password,
+                                  will_topic, will_message, will_qos,
+                                  will_retain, clean_session, keep_alive))
+
+        timeout = if keep_alive == 0 do
+                       :infinity
+                  else
+                       (keep_alive*1000) - 5; # we will send pingreq before 5 sec of timeout.
+                  end
+
+        tcp_opts = [:binary, active: :once]
+        tcp_time_out = 10_000 #milliseconds
+        
+        case :gen_tcp.connect(host, port, tcp_opts,tcp_time_out) do
+            {:ok, socket}    ->
+                  :gen_tcp.send(socket,message)
+                  {:reply , :connected , %{socket: socket, timeout: timeout, auto_reconnect: auto_reconnect},timeout}
+            {:error, Reason} ->
+                  IO.inspect "Error while connecting."
+                  IO.inspect Reason
+                  {:reply , {:not_connected}, state}
+        end
+
+     end
+
 
 	  def disconnect() do
 	  	GenServer.cast( __MODULE__ , :disconnect)
@@ -65,43 +123,6 @@ defmodule Bus.Mqtt do
 	  	GenServer.cast( __MODULE__ , :ping)
 	  end
 
-	  # connect to mqtt,
-	  # take params from config.
-	  def init([]) do
-	  	IO.inspect "Mqtt Client Online." 
-	  	{:ok ,%{socket: nil}}
-  	  end
-
-  	 def handle_call({:connect,opts},_From ,%{socket: skt} = state) do
-
-  	 	host          = opts |> Map.fetch!(:host)
-        port          = opts |> Map.fetch!(:port)
-
-        client_id     = opts |> Map.fetch!(:client_id)
-        username      = opts |> Map.get(:username, "")
-        password      = opts |> Map.get(:password, "")
-        will_topic    = opts |> Map.get(:will_topic, "")
-        will_message  = opts |> Map.get(:will_message, "")
-        will_qos      = opts |> Map.get(:will_qos, 0)
-        will_retain   = opts |> Map.get(:will_retain, 0)
-        clean_session = opts |> Map.get(:clean_session, 1)
-        keep_alive    = opts |> Map.get(:keep_alive, 100)
-
-        message = Packet.encode(Message.connect(client_id, username, password,
-                                  will_topic, will_message, will_qos,
-                                  will_retain, clean_session, keep_alive))
-
-        timeout = if keep_alive == 0 do
-                       :infinity
-                  else
-                       (keep_alive*1000) - 5; # we will send pingreq before 5 sec of timeout.
-                  end
-
-        tcp_opts = [:binary, active: :once]
-	      {:ok, socket} = :gen_tcp.connect(host, port, tcp_opts)
-        :gen_tcp.send(socket,message)
-        {:reply , {:sent} , %{socket: socket, timeout: timeout},timeout}
-  	 end
 
   	 #define How to get ID. may be we need one process to manage ids, or Agent.
   	 #think and implement.
