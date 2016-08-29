@@ -94,7 +94,7 @@ defmodule Bus.Mqtt do
 	  	GenServer.cast( __MODULE__ , :disconnect)
 	  end
 
-	  def publish(topic,message,qos,dup,retain) do
+	  def publish(topic,message,qos \\ 1, dup \\ 0,retain \\ 0) do
 	  	opts = %{
 	  		topic: topic,
 	  		message: message,
