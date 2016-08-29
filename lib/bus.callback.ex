@@ -16,4 +16,9 @@ defmodule Bus.Callback do
 		IO.inspect data
 	end
 
+	def on_message_received(topic,message) do
+		IO.inspect topic
+		IO.inspect message
+	end
+
 end

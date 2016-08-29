@@ -18,7 +18,8 @@ use Mix.Config
      		username: "",
      		password: "",
      		auto_reconnect: true,
-     		auto_connect: true
+     		auto_connect: true,
+     		callback: Bus.Callback
 #
 # And access this configuration in your application as:
 #

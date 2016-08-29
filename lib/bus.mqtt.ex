@@ -12,7 +12,8 @@ defmodule Bus.Mqtt do
         socket: nil, #to send & receive data
         timeout: 0,  #mqtt keep_alive timeout
         auto_reconnect: false, #reconnect auto,if disconnect.
-        disconnected: true
+        disconnected: true,
+        callback: Application.get_env(:bus,:callback,Bus.Callback)
    }
 
 	  def start_link do
@@ -27,7 +28,7 @@ defmodule Bus.Mqtt do
           case connect(:auto) do
                {:ok,socket,timeout,auto_reconnect} ->
                    IO.inspect "Auto connected."
-                   {:ok,%{socket: socket,timeout: timeout, auto_reconnect: auto_reconnect, disconnected: false}}
+                   {:ok,%{state | socket: socket,timeout: timeout, auto_reconnect: auto_reconnect, disconnected: false}}
                 _ ->
                    {:ok,state}
           end
@@ -82,7 +83,7 @@ defmodule Bus.Mqtt do
         case connect(:auto) do
                {:ok,socket,timeout,auto_reconnect} ->
                    IO.inspect "Connected."
-                   {:ok,%{socket: socket,timeout: timeout, auto_reconnect: auto_reconnect, disconnected: false}}
+                   {:ok,%{state | socket: socket,timeout: timeout, auto_reconnect: auto_reconnect, disconnected: false}}
                 _ ->
                    {:ok,state}
           end
@@ -105,8 +106,8 @@ defmodule Bus.Mqtt do
 	  end
 
 	  # list_of_data = [{topic,qos},{topic,qos}]
-	  def subscribe() do
-	  	GenServer.cast( __MODULE__ , { :subscribe , ["a","b"],[1,1]})
+	  def subscribe(topics,qoses) do
+	  	GenServer.cast( __MODULE__ , { :subscribe , topics,qoses})
 	  end
 
     #check if arg is list or not.
@@ -170,27 +171,29 @@ defmodule Bus.Mqtt do
         {:noreply, %{state | disconnected: true},timeout}
       end
 
-  	 #all the messages will from tcp will be received here.
-  	 #this will be the entry point of all the tcp messages,
-  	 #get message from here, decode it and process it.
-  	 def handle_info({:tcp, socket, msg}, %{socket: socket,timeout: timeout} = state) do
+     #RECEIVER
+  	 def handle_info({:tcp, socket, msg}, %{socket: socket,timeout: timeout,callback: callback} = state) do
       %{message: message,remainder: remainder} = Packet.decode msg
   	 	case message do
          %Bus.Message.ConnAck{} ->
             Bus.Callback.on_connect({:ok,"connection successful"})
+         %Bus.Message.Publish{id: id,topic: topic,message: msg,qos: qos} -> #this will only call when QoS = 1
+            IO.inspect "New Message received."
+            IO.inspect qos
+            callback.on_message_received(topic,msg)
          %Bus.Message.PubAck{} -> #this will only call when QoS = 1
-            Bus.Callback.on_publish({:ok,1,"publish successful"})
+            callback.on_publish({:ok,1,"publish successful"})
          %Bus.Message.PubRec{id: id} -> #this will only call when QoS = 2
             pub_rel_msg = Message.publish_release(id)
             :gen_tcp.send(socket,Packet.encode(pub_rel_msg))
          %Bus.Message.PubComp{} -> #this will only call when QoS = 2
-            Bus.Callback.on_publish({:ok,2,"publish successful"})
+            callback.on_publish({:ok,2,"publish successful"})
          %Bus.Message.SubAck{} ->
-            Bus.Callback.on_subscribe({:ok,"subscribe successful"})
+            callback.on_subscribe({:ok,"subscribe successful"})
          %Bus.Message.PingResp{} -> #this is internal use.increase the timeout.
-            IO.inspect "Ping resp came."
+            IO.inspect "Connection Refreshed."
          %Bus.Message.UnsubAck{} ->
-            Bus.Callback.on_unsubscribe({:ok,"unsubscribe successful"})
+            callback.on_unsubscribe({:ok,"unsubscribe successful"})
          _ ->
             Logger.debug "Error while receiving packet."
       end
@@ -207,7 +210,7 @@ defmodule Bus.Mqtt do
   	 #This will call when tcp will be closed, try to reconnect.
   	 def handle_info({:tcp_closed, socket}, %{socket: socket,timeout: timeout,auto_reconnect: auto_reconnect, disconnected: disconnected} = state) do
       if auto_reconnect == true and disconnected == false do
-          reconnect()
+          reconnect(state)
        end
   	 end
 
@@ -219,15 +222,15 @@ defmodule Bus.Mqtt do
       end 
      end
 
-     defp reconnect() do
+     defp reconnect(state) do
          IO.inspect "Reconnection in process."
         case connect(:auto) do
                {:ok,socket,timeout,auto_reconnect} ->
                    IO.inspect "Auto Reconnection successful."
-                   {:noreply,%{socket: socket,timeout: timeout, auto_reconnect: auto_reconnect, disconnected: false}}
+                   {:noreply,%{state | socket: socket,timeout: timeout, auto_reconnect: auto_reconnect, disconnected: false}}
                 _ ->
                    :timer.sleep(2000)
-                   reconnect()
+                   reconnect(state)
           end
      end
      defp get_timeout(keep_alive) do
