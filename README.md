@@ -39,7 +39,7 @@ If [available in Hex](https://hex.pm/docs/publish), the package can be installed
         qos = 1
         Bus.Mqtt.publish(topic,message,qos)
     ```
- 5. Subscribe
+  5. Subscribe
   
      ```elixir
         topics = ["a","b","c"] #list of topics
