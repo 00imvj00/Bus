@@ -35,6 +35,9 @@ If [available in Hex](https://hex.pm/docs/publish), the package can be installed
  4. Publish 
  
      ```elixir
+        topic = "a"
+        message = "Hello World...!"
+        qos = 1
         Bus.Mqtt.publish(topic,message,qos)
     ```
  5. Subscribe
