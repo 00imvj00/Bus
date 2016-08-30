@@ -46,6 +46,35 @@ If [available in Hex](https://hex.pm/packages/bus), the package can be installed
         qoses = [1,0,2] #list of qos in same order as topics.
         Bus.Mqtt.subscribe(topics,qoses)
     ```
+  6. Callback
+    
+    ```elixir
+        defmodule Bus.Callback do
+	
+          	def on_publish(data) do
+          		IO.inspect data
+          	end
+          
+          	def on_connect(data) do
+          		IO.inspect data
+          	end
+          
+          	def on_subscribe(data) do
+          		IO.inspect data
+          	end
+          
+          	def on_unsubscribe(data) do
+          		IO.inspect data
+          	end
+          
+          	def on_message_received(topic,message) do
+          		IO.inspect topic
+          		IO.inspect message
+          	end
+        
+        end
+    ```
+    This still needs more improvements, may change in upcoming versions.
     
 =======
 Pure Mqtt client written in Elixir
