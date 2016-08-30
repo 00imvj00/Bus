@@ -31,8 +31,7 @@ If [available in Hex](https://hex.pm/docs/publish), the package can be installed
      		auto_connect: true, #this will make sure when you start :bus process, it gets connected autometically
      		callback: Bus.Callback #callback module, you need to implement callback inside.
     ```
-
- 4. Publish 
+  4. Publish 
  
      ```elixir
         topic = "a"
@@ -47,7 +46,7 @@ If [available in Hex](https://hex.pm/docs/publish), the package can be installed
         qoses = [1,0,2] #list of qos in same order as topics.
         Bus.Mqtt.subscribe(topics,qoses)
     ```
-  
+    
 =======
 Pure Mqtt client written in Elixir
 
