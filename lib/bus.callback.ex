@@ -13,7 +13,8 @@ defmodule Bus.Callback do
 	end
 
 	def on_error(data) do
-		
+		IO.inspect "Error while connecting."
+		IO.inspect data
 	end
 	
 	def on_subscribe(data) do

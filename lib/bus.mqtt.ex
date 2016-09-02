@@ -23,13 +23,13 @@ defmodule Bus.Mqtt do
 
     # connect to mqtt,
     # take params from config.
-    def init(state) do
+    def init(%{callback: callback} = state) do
       if Application.get_env(:bus,:auto_connect, true) do
           case connect(:auto) do
                {:ok,socket,timeout,auto_reconnect} ->
-                   IO.inspect "Auto connected."
                    {:ok,%{state | socket: socket,timeout: timeout, auto_reconnect: auto_reconnect, disconnected: false}}
-                _ ->
+               {:error, Reason} ->
+                   callback.on_error(Reason)
                    {:ok,state}
           end
       else
@@ -60,7 +60,6 @@ defmodule Bus.Mqtt do
                                   will_topic, will_message, will_qos,
                                   will_retain, clean_session, keep_alive)
 
-                 IO.inspect message
                  timeout = get_timeout(keep_alive)
 
                  tcp_opts = [:binary, active: :once]
@@ -69,17 +68,12 @@ defmodule Bus.Mqtt do
                  case :gen_tcp.connect(host, port, tcp_opts,tcp_time_out) do
                     {:ok, socket}    ->
                         :gen_tcp.send(socket,Packet.encode(message))
-                        IO.inspect "TCP Connected."
                         {:ok, socket,timeout,auto_reconnect}
                     {:error, :econnrefused} ->
-                        IO.inspect "Could not reach to server."
                         {:error,"could not reach to server."}
-                    {:error, :enetunreach} ->
-                        IO.inspect "Unrechable server."
-                        {:error,"could not reach to server."}
+                    {:error, :enetunreach} -> #bcz cline internet is not there.
+                        {:error,"could not reach to server,check internet."}
                     {:error, Reason} ->
-                        IO.inspect "Error while connecting."
-                        IO.inspect Reason
                         {:error,Reason}
                   end
     end
@@ -178,15 +172,13 @@ defmodule Bus.Mqtt do
 
      #RECEIVER
   	 def handle_info({:tcp, socket, msg}, %{socket: socket,timeout: timeout,callback: callback} = state) do
-      IO.inspect msg
       %{message: message,remainder: remainder} = Packet.decode msg
-      IO.inspect message
   	 	case message do
          %Bus.Message.ConnAck{} ->
-            Bus.Callback.on_connect({:ok,"connection successful"})
+            callback.on_connect("connection successful")
          %Bus.Message.Publish{id: id,topic: topic,message: msg,qos: qos} -> #this will only call when QoS = 1
-            IO.inspect "New Message received."
-            IO.inspect qos
+            #IO.inspect "New Message received."
+            #IO.inspect qos
             callback.on_message_received(topic,msg)
          %Bus.Message.PubAck{} -> #this will only call when QoS = 1
             callback.on_publish({:ok,1,"publish successful"})
@@ -234,7 +226,6 @@ defmodule Bus.Mqtt do
          IO.inspect "Reconnection in process."
         case connect(:auto) do
                {:ok,socket,timeout,auto_reconnect} ->
-                   IO.inspect "Auto Reconnection successful."
                    {:noreply,%{state | socket: socket,timeout: timeout, auto_reconnect: auto_reconnect, disconnected: false}}
                 _ ->
                    :timer.sleep(2000)

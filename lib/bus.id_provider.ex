@@ -15,7 +15,6 @@ defmodule Bus.IdProvider do
 	end
 
 	def init(state) do
-	  	IO.inspect "Id Provider online." 
 	  	{:ok,state}
   	end
 
