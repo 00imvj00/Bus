@@ -50,16 +50,17 @@ defmodule Bus.Mqtt do
                  password = Application.get_env(:bus, :password, "")
                  will_topic = ""
                  will_message = ""
-                 will_qos = 1
+                 will_qos = 0
                  will_retain = 0
                  clean_session = 1
                  keep_alive = Application.get_env(:bus, :keep_alive, 120) #sec
                  auto_reconnect = Application.get_env(:bus, :auto_reconnect, false)
 
-                 message = Packet.encode(Message.connect(client_id, username, password,
+                 message = Message.connect(client_id, username, password,
                                   will_topic, will_message, will_qos,
-                                  will_retain, clean_session, keep_alive))
+                                  will_retain, clean_session, keep_alive)
 
+                 IO.inspect message
                  timeout = get_timeout(keep_alive)
 
                  tcp_opts = [:binary, active: :once]
@@ -67,10 +68,14 @@ defmodule Bus.Mqtt do
 
                  case :gen_tcp.connect(host, port, tcp_opts,tcp_time_out) do
                     {:ok, socket}    ->
-                        :gen_tcp.send(socket,message)
+                        :gen_tcp.send(socket,Packet.encode(message))
+                        IO.inspect "TCP Connected."
                         {:ok, socket,timeout,auto_reconnect}
                     {:error, :econnrefused} ->
                         IO.inspect "Could not reach to server."
+                        {:error,"could not reach to server."}
+                    {:error, :enetunreach} ->
+                        IO.inspect "Unrechable server."
                         {:error,"could not reach to server."}
                     {:error, Reason} ->
                         IO.inspect "Error while connecting."
@@ -173,7 +178,9 @@ defmodule Bus.Mqtt do
 
      #RECEIVER
   	 def handle_info({:tcp, socket, msg}, %{socket: socket,timeout: timeout,callback: callback} = state) do
+      IO.inspect msg
       %{message: message,remainder: remainder} = Packet.decode msg
+      IO.inspect message
   	 	case message do
          %Bus.Message.ConnAck{} ->
             Bus.Callback.on_connect({:ok,"connection successful"})
@@ -208,7 +215,8 @@ defmodule Bus.Mqtt do
      end
 
   	 #This will call when tcp will be closed, try to reconnect.
-  	 def handle_info({:tcp_closed, socket}, %{socket: socket,timeout: timeout,auto_reconnect: auto_reconnect, disconnected: disconnected} = state) do
+  	 def handle_info({:tcp_closed, socket}, %{socket: socket,timeout: timeout,auto_reconnect: auto_reconnect, disconnected: disconnected,callback: callback} = state) do
+      callback.on_disconnect("connection closed.")
       if auto_reconnect == true and disconnected == false do
           reconnect(state)
        end
