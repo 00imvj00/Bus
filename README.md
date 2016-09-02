@@ -58,7 +58,15 @@ If [available in Hex](https://hex.pm/packages/bus), the package can be installed
           	def on_connect(data) do
           		IO.inspect data
           	end
+          	
+          	def on_disconnect(data) do
+          		IO.inspect data
+          	end
           
+          	def on_error(data) do
+          		IO.inspect data
+          	end
+          	
           	def on_subscribe(data) do
           		IO.inspect data
           	end
