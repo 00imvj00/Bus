@@ -3,11 +3,11 @@ defmodule Bus.Protocol do
   alias Bus.Encoder
   alias Bus.Decoder
   @moduledoc """
-  Defines Packet protocol and provides implementations for Hulaaki Messages
+  Defines Packet protocol and provides implementations for bus Messages
   """
   defprotocol Packet do
     @moduledoc """
-    Defines the protocol Packet to encode/decode a Hulaaki Message
+    Defines the protocol Packet to encode/decode a bus Message
     """
 
     @doc """

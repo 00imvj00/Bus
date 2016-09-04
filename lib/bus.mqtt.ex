@@ -172,19 +172,30 @@ defmodule Bus.Mqtt do
 
      #RECEIVER
   	 def handle_info({:tcp, socket, msg}, %{socket: socket,timeout: timeout,callback: callback} = state) do
+      :inet.setopts(socket, active: :once)
       %{message: message,remainder: remainder} = Packet.decode msg
   	 	case message do
          %Bus.Message.ConnAck{} ->
             callback.on_connect("connection successful")
-         %Bus.Message.Publish{id: id,topic: topic,message: msg,qos: qos} -> #this will only call when QoS = 1
-            #IO.inspect "New Message received."
-            #IO.inspect qos
+         %Bus.Message.Publish{id: id,topic: topic,message: msg,qos: qos} -> 
+            case qos do
+               1 -> 
+                  pub_ack = Message.publish_ack(id)
+                  :gen_tcp.send(socket,Packet.encode(pub_ack))
+               2 ->
+                  pub_rec = Message.publish_receive(id)
+                  :gen_tcp.send(socket,Packet.encode(pub_rec))
+               _ -> :ok
+            end
             callback.on_message_received(topic,msg)
          %Bus.Message.PubAck{} -> #this will only call when QoS = 1
             callback.on_publish({:ok,1,"publish successful"})
          %Bus.Message.PubRec{id: id} -> #this will only call when QoS = 2
             pub_rel_msg = Message.publish_release(id)
             :gen_tcp.send(socket,Packet.encode(pub_rel_msg))
+          %Bus.Message.PubRel{id: id} ->
+            pub_comp_msg = Message.publish_complete(id)
+            :gen_tcp.send(socket,Packet.encode(pub_comp_msg))
          %Bus.Message.PubComp{} -> #this will only call when QoS = 2
             callback.on_publish({:ok,2,"publish successful"})
          %Bus.Message.SubAck{} ->
@@ -196,7 +207,6 @@ defmodule Bus.Mqtt do
          _ ->
             Logger.debug "Error while receiving packet."
       end
-  	 	:inet.setopts(socket, active: :once)
   	 	{:noreply, state,timeout}
   	 end
 

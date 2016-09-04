@@ -6,7 +6,7 @@ defmodule Bus.Message do
 
   defmodule Connect do
     @moduledoc """
-    Struct for Hulaaki Connect
+    Struct for bus Connect
 
     ## Fields
 
@@ -69,7 +69,7 @@ defmodule Bus.Message do
 
   defmodule ConnAck do
     @moduledoc """
-    Struct for Hulaaki ConnAck
+    Struct for bus ConnAck
 
     ## Fields
 
@@ -95,7 +95,7 @@ defmodule Bus.Message do
 
   defmodule Publish do
     @moduledoc """
-    Struct for Hulaaki Publish
+    Struct for bus Publish
 
     ## Fields
       * `packet_id` : An integer of value upto 65536 (2 bytes) representing packet identifier
@@ -154,7 +154,7 @@ defmodule Bus.Message do
 
   defmodule PubAck do
     @moduledoc """
-    Struct for Hulaaki PubAck
+    Struct for bus PubAck
 
     ## Fields
       * `packet_id` : An integer of value upto 65536 (2 bytes) representing packet identifier
@@ -177,7 +177,7 @@ defmodule Bus.Message do
 
   defmodule PubRec do
     @moduledoc """
-    Struct for Hulaaki PubRec
+    Struct for bus PubRec
 
     ## Fields
       * `packet_id` : An integer of value upto 65536 (2 bytes) representing packet identifier
@@ -199,7 +199,7 @@ defmodule Bus.Message do
 
   defmodule PubRel do
     @moduledoc """
-    Struct for Hulaaki PubRel
+    Struct for bus PubRel
 
     ## Fields
       * `packet_id` : An integer of value upto 65536 (2 bytes) representing packet identifier
@@ -222,7 +222,7 @@ defmodule Bus.Message do
 
   defmodule PubComp do
     @moduledoc """
-    Struct for Hulaaki PubComp
+    Struct for bus PubComp
 
     ## Fields
       * `packet_id` : An integer of value upto 65536 (2 bytes) representing packet identifier
@@ -245,7 +245,7 @@ defmodule Bus.Message do
 
   defmodule Subscribe do
     @moduledoc """
-    Struct for Hulaaki Subscribe
+    Struct for bus Subscribe
 
     ## Fields
       * `packet_id` : An integer of value upto 65536 (2 bytes) representing packet identifier
@@ -281,7 +281,7 @@ defmodule Bus.Message do
 
   defmodule SubAck do
     @moduledoc """
-    Struct for Hulaaki SubAck
+    Struct for bus SubAck
 
     ## Fields
       * `packet_id`     : An integer of value upto 65536 (2 bytes) representing packet identifier
@@ -312,7 +312,7 @@ defmodule Bus.Message do
 
   defmodule Unsubscribe do
     @moduledoc """
-    Struct for Hulaaki Unsubscribe
+    Struct for bus Unsubscribe
 
     ## Fields
       * `packet_id` : An integer of value upto 65536 (2 bytes) representing packet identifier
@@ -337,7 +337,7 @@ defmodule Bus.Message do
 
   defmodule UnsubAck do
     @moduledoc """
-    Struct for Hulaaki UnsubAck
+    Struct for bus UnsubAck
 
     ## Fields
       * `packet_id` : An integer of value upto 65536 (2 bytes) representing packet identifier
@@ -359,7 +359,7 @@ defmodule Bus.Message do
 
   defmodule PingReq do
     @moduledoc """
-    Struct for Hulaaki PingReq
+    Struct for bus PingReq
     """
 
     @type t :: %__MODULE__{type: atom}
@@ -375,7 +375,7 @@ defmodule Bus.Message do
 
   defmodule PingResp do
     @moduledoc """
-    Struct for Hulaaki PingResp
+    Struct for bus PingResp
     """
 
     @type t :: %__MODULE__{type: atom}
@@ -391,7 +391,7 @@ defmodule Bus.Message do
 
   defmodule Disconnect do
     @moduledoc """
-    Struct for Hulaaki Disconnect
+    Struct for bus Disconnect
     """
 
     @type t :: %__MODULE__{type: atom}
