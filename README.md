@@ -24,7 +24,7 @@ If [available in Hex](https://hex.pm/packages/bus), the package can be installed
      		host: 'localhost',
      		port: 1883,
      		client_id: "1", #needs to be string.
-     		keep_alive: 100,
+     		keep_alive: 100, #this is in seconds.
      		username: "",
      		password: "",
      		auto_reconnect: true, #if client get disconnected, it will auto reconnect.
