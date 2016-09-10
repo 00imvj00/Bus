@@ -34,7 +34,28 @@ defmodule Bus.Mqtt do
           {:ok,state}
       end
     end
- 
+  
+    def on_message_received(topic,asdf) do
+        IO.inspect "New Message received."  
+    end
+
+    def on_error(errr) do
+      IO.inspect "Error"
+    end
+
+    def on_disconnect(msg) do
+      
+    end
+
+    def on_connect(msg) do
+      
+    end
+
+    def on_info(msg) do
+      
+    end
+
+
     def connect() do
         GenServer.call(__MODULE__, {:connect})
     end
@@ -66,13 +87,17 @@ defmodule Bus.Mqtt do
                  case :gen_tcp.connect(host, port, tcp_opts,tcp_time_out) do
                     {:ok, socket}    ->
                         :gen_tcp.send(socket,Packet.encode(message))
+                        Application.get_env(:bus, :callback).on_connect("Connection successful")
                         {:ok, socket,timeout,auto_reconnect}
                     {:error, :econnrefused} ->
+                        Application.get_env(:bus, :callback).on_error("can't reach server.")
                         {:error,"could not reach to server."}
                     {:error, :enetunreach} -> #bcz cline internet is not there.
+                        Application.get_env(:bus, :callback).on_error("check your internet connection, can't reach server.")
                         {:error,"could not reach to server,check internet."}
-                    {:error, Reason} ->
-                        {:error,Reason}
+                    {:error, reason} ->
+                        Application.get_env(:bus, :callback).on_error(reason)
+                        {:error,reason}
                   end
     end
 
@@ -170,11 +195,12 @@ defmodule Bus.Mqtt do
       end
 
      #RECEIVER
-  	 def handle_info({:tcp, socket, msg}, %{socket: socket,timeout: timeout,callback: callback} = state) do
+  	 def handle_info({:tcp, socket, msg}, %{socket: socket,timeout: timeout} = state) do
       :inet.setopts(socket, active: :once)
       %{message: message,remainder: remainder} = Packet.decode msg
   	 	case message do
-         %Bus.Message.ConnAck{}  -> callback.on_connect("connection successful")
+         %Bus.Message.ConnAck{}  -> 
+            Application.get_env(:bus, :callback).on_connect("Connected.")
          %Bus.Message.Publish{id: id,topic: topic,message: msg,qos: qos} -> 
             case qos do
                1 -> 
@@ -185,7 +211,7 @@ defmodule Bus.Mqtt do
                   :gen_tcp.send(socket,Packet.encode(pub_rec))
                _ -> :ok
             end
-            callback.on_message_received(topic,msg)
+            Application.get_env(:bus, :callback).on_message_received(topic,msg)
          %Bus.Message.PubAck{id: id} -> #this will only call when QoS = 1, we need to free the id.
             cb = IdProvider.free_id(id)
             cb.(id)
@@ -202,11 +228,12 @@ defmodule Bus.Mqtt do
             cb = IdProvider.free_id(id)
             cb.(id)
          %Bus.Message.PingResp{} -> #this is internal use.increase the timeout.
-            IO.inspect "Connection Refreshed."
+            Application.get_env(:bus, :callback).on_info("Connection Refreshed.")
          %Bus.Message.UnsubAck{id: id} ->
             cb = IdProvider.free_id(id)
             cb.(id)
          _ ->
+           Application.get_env(:bus, :callback).on_error("Random packet arrived.")
             Logger.debug "Error while receiving packet."
       end
   	 	{:noreply, state,timeout}
@@ -219,8 +246,9 @@ defmodule Bus.Mqtt do
      end
 
   	 #This will call when tcp will be closed, try to reconnect.
-  	 def handle_info({:tcp_closed, socket}, %{socket: socket,timeout: timeout,auto_reconnect: auto_reconnect, disconnected: disconnected,callback: callback} = state) do
-      callback.on_disconnect("connection closed.")
+  	 def handle_info({:tcp_closed, socket}, %{socket: socket,timeout: timeout,auto_reconnect: auto_reconnect, disconnected: disconnected} = state) do
+      IO.inspect "Connection closed."
+      Application.get_env(:bus, :callback).on_disconnect("disconnected.")
       if auto_reconnect == true and disconnected == false do
           reconnect(state)
        end
