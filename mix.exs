@@ -3,7 +3,7 @@ defmodule Bus.Mixfile do
 
   def project do
     [app: :bus,
-     version: "0.1.2",
+     version: "0.1.4",
      elixir: "~> 1.3",
      description: description(),
      package: package(),

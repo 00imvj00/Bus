@@ -12,8 +12,7 @@ defmodule Bus.Mqtt do
         socket: nil, #to send & receive data
         timeout: 0,  #mqtt keep_alive timeout
         auto_reconnect: false, #reconnect auto,if disconnect.
-        disconnected: true,
-        callback: Application.get_env(:bus,:callback,Bus.Callback)
+        disconnected: true
    }
 
 	  def start_link do
@@ -23,13 +22,12 @@ defmodule Bus.Mqtt do
 
     # connect to mqtt,
     # take params from config.
-    def init(%{callback: callback} = state) do
+    def init(state) do
       if Application.get_env(:bus,:auto_connect, true) do
           case connect(:auto) do
                {:ok,socket,timeout,auto_reconnect} ->
                    {:ok,%{state | socket: socket,timeout: timeout, auto_reconnect: auto_reconnect, disconnected: false}}
                {:error, Reason} ->
-                   callback.on_error(Reason)
                    {:ok,state}
           end
       else
@@ -81,7 +79,7 @@ defmodule Bus.Mqtt do
     def handle_call({:connect,opts},_From,state) do
         case connect(:auto) do
                {:ok,socket,timeout,auto_reconnect} ->
-                   IO.inspect "Connected."
+                   IO.inspect "MQTT Connected."
                    {:ok,%{state | socket: socket,timeout: timeout, auto_reconnect: auto_reconnect, disconnected: false}}
                 _ ->
                    {:ok,state}
@@ -93,25 +91,26 @@ defmodule Bus.Mqtt do
 	  	GenServer.cast( __MODULE__ , :disconnect)
 	  end
 
-	  def publish(topic,message,qos \\ 1, dup \\ 0,retain \\ 0) do
+	  def publish(topic,message,funn,qos \\ 1, dup \\ 0,retain \\ 0) do
 	  	opts = %{
 	  		topic: topic,
 	  		message: message,
 	  		dup: dup,
 	  		qos: qos,
-	  		retain: retain
+	  		retain: retain,
+        cb: funn
 	  	}
 	  	GenServer.cast( __MODULE__ , { :publish , opts })
 	  end
 
 	  # list_of_data = [{topic,qos},{topic,qos}]
-	  def subscribe(topics,qoses) do
-	  	GenServer.cast( __MODULE__ , { :subscribe , topics,qoses})
+	  def subscribe(topics,qoses, funn) do
+	  	GenServer.cast( __MODULE__ , { :subscribe , topics,qoses, funn})
 	  end
 
     #check if arg is list or not.
-	  def unsubscribe(list_of_topics) do
-	  	GenServer.cast( __MODULE__ , { :unsubscribe , list_of_topics})
+	  def unsubscribe(list_of_topics, funn) do
+	  	GenServer.cast( __MODULE__ , { :unsubscribe , list_of_topics, funn})
 	  end
 
 	  def pingreq do
@@ -128,31 +127,31 @@ defmodule Bus.Mqtt do
         dup    = opts |> Map.fetch!(:dup) #bool
         qos    = opts |> Map.fetch!(:qos) #int
         retain = opts |> Map.fetch!(:retain) #bool
+        funn   = opts |> Map.fetch!(:cb)
 
         message =
           case qos do
             0 ->
               Message.publish(topic, msg, dup, qos, retain)
             _ ->
-              id = IdProvider.get_id
+              id = IdProvider.get_id(funn)
               Message.publish(id, topic, msg, dup, qos, retain)
           end
-
         :gen_tcp.send(socket,Packet.encode(message))
         {:noreply, state,timeout}
 
       end
 
-      def handle_cast({:subscribe,topics,qoses}, %{socket: socket, timeout: timeout} = state) do   
-        id     = IdProvider.get_id
+      def handle_cast({:subscribe,topics,qoses, funn}, %{socket: socket, timeout: timeout} = state) do   
+        id     = IdProvider.get_id(funn)
         message = Message.subscribe(id, topics, qoses)
     	  :gen_tcp.send(socket,Packet.encode(message))
         {:noreply, state ,timeout}
       end
 
       #get id from agent.
-      def handle_cast({:unsubscribe, topics}, %{socket: socket,timeout: timeout} = state) do
-        id      = IdProvider.get_id
+      def handle_cast({:unsubscribe, topics, funn}, %{socket: socket,timeout: timeout} = state) do
+        id      = IdProvider.get_id(funn)
         message = Message.unsubscribe(id, topics)
         :gen_tcp.send(socket,Packet.encode(message))
         {:noreply, state,timeout}
@@ -175,8 +174,7 @@ defmodule Bus.Mqtt do
       :inet.setopts(socket, active: :once)
       %{message: message,remainder: remainder} = Packet.decode msg
   	 	case message do
-         %Bus.Message.ConnAck{} ->
-            callback.on_connect("connection successful")
+         %Bus.Message.ConnAck{}  -> callback.on_connect("connection successful")
          %Bus.Message.Publish{id: id,topic: topic,message: msg,qos: qos} -> 
             case qos do
                1 -> 
@@ -188,22 +186,26 @@ defmodule Bus.Mqtt do
                _ -> :ok
             end
             callback.on_message_received(topic,msg)
-         %Bus.Message.PubAck{} -> #this will only call when QoS = 1
-            callback.on_publish({:ok,1,"publish successful"})
+         %Bus.Message.PubAck{id: id} -> #this will only call when QoS = 1, we need to free the id.
+            cb = IdProvider.free_id(id)
+            cb.(id)
          %Bus.Message.PubRec{id: id} -> #this will only call when QoS = 2
             pub_rel_msg = Message.publish_release(id)
             :gen_tcp.send(socket,Packet.encode(pub_rel_msg))
           %Bus.Message.PubRel{id: id} ->
             pub_comp_msg = Message.publish_complete(id)
             :gen_tcp.send(socket,Packet.encode(pub_comp_msg))
-         %Bus.Message.PubComp{} -> #this will only call when QoS = 2
-            callback.on_publish({:ok,2,"publish successful"})
-         %Bus.Message.SubAck{} ->
-            callback.on_subscribe({:ok,"subscribe successful"})
+         %Bus.Message.PubComp{id: id} -> #this will only call when QoS = 2
+            cb = IdProvider.free_id(id)
+            cb.(id)
+         %Bus.Message.SubAck{id: id} ->
+            cb = IdProvider.free_id(id)
+            cb.(id)
          %Bus.Message.PingResp{} -> #this is internal use.increase the timeout.
             IO.inspect "Connection Refreshed."
-         %Bus.Message.UnsubAck{} ->
-            callback.on_unsubscribe({:ok,"unsubscribe successful"})
+         %Bus.Message.UnsubAck{id: id} ->
+            cb = IdProvider.free_id(id)
+            cb.(id)
          _ ->
             Logger.debug "Error while receiving packet."
       end
