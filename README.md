@@ -6,7 +6,7 @@ If [available in Hex](https://hex.pm/packages/bus), the package can be installed
 
     ```elixir
     def deps do
-      [{:bus, "~> 0.1.0"}]
+      [{:bus, "~> 0.1.4"}]
     end
     ```
 
