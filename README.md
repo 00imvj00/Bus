@@ -72,6 +72,10 @@ If [available in Hex](https://hex.pm/packages/bus), the package can be installed
           		IO.inspect data
           	end
           	
+          	def on_info(data) do
+          		IO.inspect data
+          	end
+          	
           	#removed, no longer supported.
           	#def on_subscribe(data) do
           	#	IO.inspect data
