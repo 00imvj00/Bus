@@ -9,22 +9,20 @@ defmodule Bus.Mqtt do
 
      @callback init(opts :: term) :: atom
      @callback connect()          :: atom | {:stop, reason:: any}
-     @callback disconnect()       :: atom
-     @callback message()          :: atom
+     @callback disconnect(reason:: term)       :: atom
+     @callback message(topic:: String.t, msg:: String.t)          :: atom
 
      #if possible, add Id provider map here only in this state.
      #then it will be so independent of other process.
      @initial_state %{
         socket: nil, #to send & receive data
         timeout: 0,  #mqtt keep_alive timeout
-        auto_reconnect: false, #reconnect auto,if disconnect.
-        disconnected: true,
         host: "localhost",
         port: 1883,
-        keep_alive: 0,
+        keep_alive: 120,
         username: "",
         password: "",
-        client_id: "default",
+        client_id: "1",
         module: nil
     }
 
@@ -38,14 +36,12 @@ defmodule Bus.Mqtt do
                              keep_alive: non_neg_integer
                              ]) :: {:ok,status::term} | {:error, reason::term} 
      def start_link(module,args,opts \\ []) do
-          
           host       = Keyword.get(opts, :host,Map.get(@initial_state,:host))
           port       = Keyword.get(opts, :port,Map.get(@initial_state,:port))
           client_id  = Keyword.get(opts, :client_id,Map.get(@initial_state,:client_id))
           keep_alive = Keyword.get(opts, :keep_alive,Map.get(@initial_state,:keep_alive))
           username   = Keyword.get(opts, :username,Map.get(@initial_state,:username))
           password   = Keyword.get(opts, :password,Map.get(@initial_state,:password))
-
           state  =  %{@initial_state | 
                      module: module, host: host,
                      port: port,client_id: client_id,
@@ -100,7 +96,7 @@ defmodule Bus.Mqtt do
             {:ok}
         end
 
-        def disconnect() do
+        def disconnect(reason) do
             {:ok}
         end
 
@@ -108,7 +104,7 @@ defmodule Bus.Mqtt do
             {:ok,topic,msg}
         end
         
-        defoverridable [init: 1, connect: 0, disconnect: 0, message: 2]
+        defoverridable [init: 1, connect: 0, disconnect: 1, message: 2]
         end
      end
      #INBUILT CALLBACKS : END
@@ -134,19 +130,15 @@ defmodule Bus.Mqtt do
                                             keep_alive)
 
                     timeout = get_timeout(keep_alive)
-
                     tcp_opts = [:binary, active: :once]
                     tcp_time_out = 10_000 #milliseconds
-
-                    case :gen_tcp.connect(  Map.get(state,:host),
-                                            Map.get(state,:port), 
-                                            tcp_opts,tcp_time_out) do
+                     
+                    case :gen_tcp.connect({127,0,0,1},1883,tcp_opts,tcp_time_out) do
                         {:ok, socket}    ->
                             :gen_tcp.send(socket,Packet.encode(message))
                              new_state = %{state | socket: socket,timeout: timeout}
-                            {:ok, new_state}
+                            {:ok, new_state, timeout}
                         Error   -> {:error,Error}
-
                     end
       end
 
@@ -189,7 +181,7 @@ defmodule Bus.Mqtt do
       end
 
       #DISCONNECT
-      def handle_cast(:disconnect, %{socket: socket} = state) do
+      def handle_call(:disconnect, _From,%{socket: socket} = state) do
         message = Message.disconnect
         :gen_tcp.send(socket,Packet.encode(message))
         :ok = :gen_tcp.close(socket)
@@ -201,7 +193,7 @@ defmodule Bus.Mqtt do
       :inet.setopts(socket, active: :once)
       %{message: message} = Packet.decode msg
   	 	case message do
-                %Bus.Message.ConnAck{}  -> module.connect()
+                %Bus.Message.ConnAck{}  ->  module.connect()
                 %Bus.Message.Publish{id: id,topic: topic,message: msg,qos: qos} -> 
                     case qos do
                     1 -> 
@@ -264,7 +256,7 @@ defmodule Bus.Mqtt do
             if keep_alive == 0 do
                 :infinity
             else
-                (keep_alive*1000) - 5; # we will send pingreq before 5 sec of timeout.
+                (keep_alive - 5) * 1000; # we will send pingreq before 5 sec of timeout.
             end
      end
 end
