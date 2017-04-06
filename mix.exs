@@ -3,8 +3,8 @@ defmodule Bus.Mixfile do
 
   def project do
     [app: :bus,
-     version: "0.1.4",
-     elixir: "~> 1.3",
+     version: "0.2.0",
+     elixir: "~> 1.4",
      description: description(),
      package: package(),
      build_embedded: Mix.env == :prod,

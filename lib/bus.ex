@@ -6,7 +6,7 @@ defmodule Bus do
     import Supervisor.Spec, warn: false
 
     children = [
-      worker(Bus.Mqtt, []),
+     # worker(Bus.Mqtt, []),
       worker(Bus.IdProvider,[])
     ]
 

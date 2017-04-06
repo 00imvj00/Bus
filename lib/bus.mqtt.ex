@@ -17,7 +17,7 @@ defmodule Bus.Mqtt do
      @initial_state %{
         socket: nil, #to send & receive data
         timeout: 0,  #mqtt keep_alive timeout
-        host: "localhost",
+        host: 'localhost',
         port: 1883,
         keep_alive: 120,
         username: "",
@@ -43,9 +43,12 @@ defmodule Bus.Mqtt do
           username   = Keyword.get(opts, :username,Map.get(@initial_state,:username))
           password   = Keyword.get(opts, :password,Map.get(@initial_state,:password))
           state  =  %{@initial_state | 
-                     module: module, host: host,
-                     port: port,client_id: client_id,
-                     keep_alive: keep_alive,username: username,
+                     module: module, 
+                     host: host,
+                     port: port,
+                     client_id: client_id,
+                     keep_alive: keep_alive,
+                     username: username,
                      password: password
                      }
           module.init(args)
@@ -60,26 +63,26 @@ defmodule Bus.Mqtt do
 	  	GenServer.call( __MODULE__ , :disconnect)
 	 end
 
-     def publish(topic,message,funn,qos \\ 1, dup \\ 0,retain \\ 0) do
+     def publish(topic,message,cb_fun,qos \\ 1, dup \\ 0,retain \\ 0) do
 	  	opts = %{
 	  		topic: topic,
 	  		message: message,
 	  		dup: dup,
 	  		qos: qos,
 	  		retain: retain,
-            cb: funn
+            cb: cb_fun
 	  	}
-	  	GenServer.call( __MODULE__ , { :publish , opts })
+	  	GenServer.cast( __MODULE__ , { :publish , opts })
 	  end
 
        # list_of_data = [{topic,qos},{topic,qos}]
-	  def subscribe(topics,qoses, funn) do
-	  	GenServer.cast( __MODULE__ , { :subscribe , topics,qoses, funn})
+	  def subscribe(topics,qoses,cb_fun) do
+	  	GenServer.cast( __MODULE__ , { :subscribe , topics,qoses, cb_fun})
 	  end
 
     #check if arg is list or not.
-	  def unsubscribe(list_of_topics, funn) do
-	  	GenServer.cast( __MODULE__ , { :unsubscribe , list_of_topics, funn})
+	  def unsubscribe(list_of_topics, cb_fun) do
+	  	GenServer.cast( __MODULE__ , { :unsubscribe , list_of_topics, cb_fun})
 	  end
 
      
@@ -132,8 +135,11 @@ defmodule Bus.Mqtt do
                     timeout = get_timeout(keep_alive)
                     tcp_opts = [:binary, active: :once]
                     tcp_time_out = 10_000 #milliseconds
-                     
-                    case :gen_tcp.connect({127,0,0,1},1883,tcp_opts,tcp_time_out) do
+                    host = Map.get(state, :host)
+                    port = Map.get(state, :port)
+                    IO.inspect host
+                    IO.inspect port
+                    case :gen_tcp.connect(host,port,tcp_opts,tcp_time_out) do
                         {:ok, socket}    ->
                             :gen_tcp.send(socket,Packet.encode(message))
                              new_state = %{state | socket: socket,timeout: timeout}
@@ -143,7 +149,7 @@ defmodule Bus.Mqtt do
       end
 
       #PUBLISH
-  	  def handle_call({:publish, opts}, _From,%{socket: socket, timeout: timeout} = state) do
+  	  def handle_cast({:publish, opts},%{socket: socket, timeout: timeout} = state) do
             
             topic  = opts |> Map.fetch!(:topic) #""
             msg    = opts |> Map.fetch!(:message) #""
@@ -165,10 +171,10 @@ defmodule Bus.Mqtt do
       end
 
       #SUBSCRIBE
-      def handle_call({:subscribe,topics,qoses, funn}, %{socket: socket, timeout: timeout} = state) do   
-        id     = IdProvider.get_id(funn)
+      def handle_cast({:subscribe,topics,qoses, funn}, %{socket: socket, timeout: timeout} = state) do   
+        id      = IdProvider.get_id(funn)
         message = Message.subscribe(id, topics, qoses)
-    	  :gen_tcp.send(socket,Packet.encode(message))
+    	:gen_tcp.send(socket,Packet.encode(message))
         {:noreply, state ,timeout}
       end
 
