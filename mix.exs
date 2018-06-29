@@ -2,9 +2,10 @@ defmodule Bus.Mixfile do
   use Mix.Project
 
   def project do
-    [app: :bus,
+    [
+      app: :bus,
      version: "0.2.0",
-     elixir: "~> 1.4",
+     elixir: "~> 1.6.6",
      description: description(),
      package: package(),
      build_embedded: Mix.env == :prod,
@@ -32,9 +33,9 @@ defmodule Bus.Mixfile do
     [
      name: :bus,
      files: ["lib", "mix.exs", "README.md","LICENSE*"],
-     maintainers: ["imvj"],
+     maintainers: ["00imvj00"],
      licenses: ["Apache 2.0"],
-     links: %{"GitHub" => "https://github.com/i-m-v-j/Bus",
+     links: %{"GitHub" => "https://github.com/00imvj00/Bus",
               "Docs" => ""}]
   end
 
