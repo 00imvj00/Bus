@@ -2,10 +2,10 @@ defmodule Bus.Mqtt do
 	 use GenServer
      require Logger
 
-     alias Bus.Message
-     alias Bus.Protocol.Packet
+     alias ExMqtt.Message
+     alias ExMqtt.Protocol.Packet
      alias Bus.IdProvider
-        
+
 
      @callback init(opts :: term) :: atom
      @callback connect()          :: atom | {:stop, reason:: any}
@@ -28,13 +28,13 @@ defmodule Bus.Mqtt do
 
      @spec start_link(module :: term,
                       args   :: term,
-                             [host:       String.t, 
+                             [host:       String.t,
                              port:      non_neg_integer,
                              client_id: String.t,
                              username:  String.t,
                              password:  String.t,
                              keep_alive: non_neg_integer
-                             ]) :: {:ok,status::term} | {:error, reason::term} 
+                             ]) :: {:ok,status::term} | {:error, reason::term}
      def start_link(module,args,opts \\ []) do
           host       = Keyword.get(opts, :host,Map.get(@initial_state,:host))
           port       = Keyword.get(opts, :port,Map.get(@initial_state,:port))
@@ -42,8 +42,8 @@ defmodule Bus.Mqtt do
           keep_alive = Keyword.get(opts, :keep_alive,Map.get(@initial_state,:keep_alive))
           username   = Keyword.get(opts, :username,Map.get(@initial_state,:username))
           password   = Keyword.get(opts, :password,Map.get(@initial_state,:password))
-          state  =  %{@initial_state | 
-                     module: module, 
+          state  =  %{@initial_state |
+                     module: module,
                      host: host,
                      port: port,
                      client_id: client_id,
@@ -58,7 +58,7 @@ defmodule Bus.Mqtt do
      def stop() do
          GenServer.call( __MODULE__ , :disconnect)
      end
-     
+
      def disconnect() do
 	  	GenServer.call( __MODULE__ , :disconnect)
 	 end
@@ -85,7 +85,7 @@ defmodule Bus.Mqtt do
 	  	GenServer.cast( __MODULE__ , { :unsubscribe , list_of_topics, cb_fun})
 	  end
 
-     
+
      #INBUILT CALLBACKS : START
      defmacro __using__(_) do
         quote location: :keep do
@@ -106,7 +106,7 @@ defmodule Bus.Mqtt do
         def message(topic,msg) do
             {:ok,topic,msg}
         end
-        
+
         defoverridable [init: 1, connect: 0, disconnect: 1, message: 2]
         end
      end
@@ -125,11 +125,11 @@ defmodule Bus.Mqtt do
                     message = Message.connect(Map.get(state,:client_id),
                                             Map.get(state,:username),
                                             Map.get(state,:password),
-                                            will_topic, 
+                                            will_topic,
                                             will_message,
                                             will_qos,
                                             will_retain,
-                                            clean_session, 
+                                            clean_session,
                                             keep_alive)
 
                     timeout = get_timeout(keep_alive)
@@ -150,7 +150,7 @@ defmodule Bus.Mqtt do
 
       #PUBLISH
   	  def handle_cast({:publish, opts},%{socket: socket, timeout: timeout} = state) do
-            
+
             topic  = opts |> Map.fetch!(:topic) #""
             msg    = opts |> Map.fetch!(:message) #""
             dup    = opts |> Map.fetch!(:dup) #bool
@@ -171,7 +171,7 @@ defmodule Bus.Mqtt do
       end
 
       #SUBSCRIBE
-      def handle_cast({:subscribe,topics,qoses, funn}, %{socket: socket, timeout: timeout} = state) do   
+      def handle_cast({:subscribe,topics,qoses, funn}, %{socket: socket, timeout: timeout} = state) do
         id      = IdProvider.get_id(funn)
         message = Message.subscribe(id, topics, qoses)
     	:gen_tcp.send(socket,Packet.encode(message))
@@ -193,44 +193,44 @@ defmodule Bus.Mqtt do
         :ok = :gen_tcp.close(socket)
         {:stop, :normal, state}
       end
-          
+
      #RECEIVER
   	 def handle_info({:tcp, socket, msg}, %{socket: socket,timeout: timeout,module: module} = state) do
       :inet.setopts(socket, active: :once)
       %{message: message} = Packet.decode msg
   	 	case message do
-                %Bus.Message.ConnAck{}  ->  module.connect()
-                %Bus.Message.Publish{id: id,topic: topic,message: msg,qos: qos} -> 
+                %Message.ConnAck{}  ->  module.connect()
+                %Message.Publish{id: id,topic: topic,message: msg,qos: qos} ->
                     case qos do
-                    1 -> 
+                    1 ->
                         pub_ack = Message.publish_ack(id)
                         :gen_tcp.send(socket,Packet.encode(pub_ack))
                     2 ->
                         pub_rec = Message.publish_receive(id)
                         :gen_tcp.send(socket,Packet.encode(pub_rec))
-                    _ -> 
+                    _ ->
                         :ok
                     end
                     module.message(topic,msg)
-                %Bus.Message.PubAck{id: id} -> #this will only call when QoS = 1, we need to free the id.
+                %Message.PubAck{id: id} -> #this will only call when QoS = 1, we need to free the id.
                     cb = IdProvider.free_id(id)
                     cb.()
-                %Bus.Message.PubRec{id: id} -> #this will only call when QoS = 2
+                %Message.PubRec{id: id} -> #this will only call when QoS = 2
                     pub_rel_msg = Message.publish_release(id)
                     :gen_tcp.send(socket,Packet.encode(pub_rel_msg))
-                %Bus.Message.PubRel{id: id} ->
+                %Message.PubRel{id: id} ->
                     pub_comp_msg = Message.publish_complete(id)
                     :gen_tcp.send(socket,Packet.encode(pub_comp_msg))
-                %Bus.Message.PubComp{id: id} -> #this will only call when QoS = 2
+                %Message.PubComp{id: id} -> #this will only call when QoS = 2
                     cb = IdProvider.free_id(id)
                     cb.()
-                %Bus.Message.SubAck{id: id} ->
+                %Message.SubAck{id: id} ->
                     cb = IdProvider.free_id(id)
                     cb.()
-                %Bus.Message.UnsubAck{id: id} ->
+                %Message.UnsubAck{id: id} ->
                     cb = IdProvider.free_id(id)
                     cb.()
-                %Bus.Message.PingResp{} -> :ok #this is internal use.increase the timeout.
+                %Message.PingResp{} -> :ok #this is internal use.increase the timeout.
                 Err ->
                     Logger.error "Unknown Packet Received."
                     IO.inspect Err
@@ -257,7 +257,7 @@ defmodule Bus.Mqtt do
       :ok
      end
 
-    #GEN_SERVER : END 
+    #GEN_SERVER : END
      defp get_timeout(keep_alive) do
             if keep_alive == 0 do
                 :infinity
