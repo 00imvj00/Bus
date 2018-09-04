@@ -1,17 +1,9 @@
 defmodule Bus do
   use Application
+  alias Bus.Supervisor
 
-  def start(_type, _args) do
-
-    import Supervisor.Spec, warn: false
-
-    children = [
-     # worker(Bus.Mqtt, []),
-      worker(Bus.IdProvider,[])
-    ]
-
-    opts = [strategy: :one_for_one, name: Bus.Supervisor]
-    Supervisor.start_link(children, opts)
-
+  @spec start(any(), any()) :: :ignore | {:error, any()} | {:ok, pid()}
+  def start(_type, args) do
+    Supervisor.start_link(args)
   end
 end
