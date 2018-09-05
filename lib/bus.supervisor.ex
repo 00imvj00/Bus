@@ -7,8 +7,7 @@ defmodule Bus.Supervisor do
   end
 
   def init(_args) do
-    Logger.info("Starting supervisor,")
-    children = [{Bus.IdProvider, []}, {Bus.Mqtt, []}]
+    children = [Bus.IdProvider, {Bus.Mqtt, []}]
     Supervisor.init(children, strategy: :one_for_one)
   end
 end
