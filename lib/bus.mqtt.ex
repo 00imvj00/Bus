@@ -6,27 +6,30 @@ defmodule Bus.Mqtt do
   alias ExMqtt.Protocol.Packet
   alias Bus.IdProvider
 
-  @initial_state %{
-    socket: nil,
-    timeout: 0,
-    host: 'localhost',
-    port: 1883,
-    keep_alive: 120,
-    username: "",
-    password: "",
-    client_id: "1",
-    auto_reconnect: true
-  }
-
   ######### API START
+  @spec start_link(any()) :: :ignore | {:error, any()} | {:ok, pid()}
   def start_link(_args) do
-    GenServer.start_link(__MODULE__, @initial_state, name: __MODULE__)
+    state = %{
+      host: Application.get_env(:bus, :host, 'localhost'),
+      port: Application.get_env(:bus, :port, 1883),
+      username: Application.get_env(:bus, :username, ''),
+      password: Application.get_env(:bus, :password, ''),
+      keep_alive: Application.get_env(:bus, :keep_alive, 120),
+      client_id: Application.get_env(:bus, :client_id, 'random_id'),
+      auto_reconnect: Application.get_env(:bus, :auto_reconnect, true),
+      socket: nil,
+      timeout: 0
+    }
+
+    GenServer.start_link(__MODULE__, state, name: __MODULE__)
   end
 
+  @spec stop() :: any()
   def stop() do
     GenServer.call(__MODULE__, :disconnect)
   end
 
+  @spec publish(any(), any(), any(), any(), any()) :: :ok
   def publish(topic, message, qos \\ 1, dup \\ 0, retain \\ 0) do
     opts = %{
       topic: topic,
