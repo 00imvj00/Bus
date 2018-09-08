@@ -238,7 +238,8 @@ defmodule Bus do
 
   # END_OF_PROCESS
   @impl true
-  def terminate(_reason, _state) do
+  def terminate(_reason, %{module: mod}) do
+    mod.on_disconnect()
     Logger.info("Gen Server terminated.")
     :ok
   end
