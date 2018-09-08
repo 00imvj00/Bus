@@ -4,7 +4,6 @@ defmodule Bus.Mqtt do
 
   alias ExMqtt.Message
   alias ExMqtt.Protocol.Packet
-  alias Bus.IdProvider
 
   ######### API START
   @spec start_link(any()) :: :ignore | {:error, any()} | {:ok, pid()}
@@ -18,7 +17,8 @@ defmodule Bus.Mqtt do
       client_id: Application.get_env(:bus, :client_id, 'random_id'),
       auto_reconnect: Application.get_env(:bus, :auto_reconnect, true),
       socket: nil,
-      timeout: 0
+      timeout: 0,
+      ids: Map.new()
     }
 
     GenServer.start_link(__MODULE__, state, name: __MODULE__)
@@ -103,129 +103,93 @@ defmodule Bus.Mqtt do
 
   # PUBLISH
   @impl true
-  def handle_cast({:publish, opts}, %{socket: socket, timeout: timeout} = state) do
-    # ""
+  def handle_cast({:publish, opts}, %{socket: socket, timeout: timeout, ids: id_list} = state) do
     topic = opts |> Map.fetch!(:topic)
-    # ""
     msg = opts |> Map.fetch!(:message)
-    # bool
     dup = opts |> Map.fetch!(:dup)
-    # int
     qos = opts |> Map.fetch!(:qos)
-    # bool
     retain = opts |> Map.fetch!(:retain)
 
-    message =
+    {message, new_state} =
       case qos do
         0 ->
-          Message.publish(topic, msg, dup, qos, retain)
+          packet = Message.publish(topic, msg, dup, qos, retain)
+          {packet, state}
 
         _ ->
-          id = IdProvider.get_id(true)
-          Message.publish(id, topic, msg, dup, qos, retain)
+          {:ok, id, new_id_list} = occupy_id(id_list, 1)
+          packet = Message.publish(id, topic, msg, dup, qos, retain)
+          new_state = %{state | ids: new_id_list}
+          {packet, new_state}
       end
 
     :gen_tcp.send(socket, Packet.encode(message))
-    {:noreply, state, timeout}
+    {:noreply, new_state, timeout}
   end
 
   # SUBSCRIBE
   @impl true
-  def handle_cast({:subscribe, topics, qoses}, %{socket: socket, timeout: timeout} = state) do
-    id = IdProvider.get_id(:a)
-    message = Message.subscribe(id, topics, qoses)
-    :gen_tcp.send(socket, Packet.encode(message))
-    {:noreply, state, timeout}
+  def handle_cast(
+        {:subscribe, topics, qoses},
+        %{socket: socket, timeout: timeout, ids: id_list} = state
+      ) do
+    with {:ok, id, new_id_list} <- occupy_id(id_list, 1),
+         packet <- Message.subscribe(id, topics, qoses),
+         e_packet <- Packet.encode(packet),
+         :ok <- :gen_tcp.send(socket, e_packet) do
+      new_state = %{state | ids: new_id_list}
+      {:noreply, new_state, timeout}
+    else
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   # UNSUBSCRIBE
   @impl true
-  def handle_cast({:unsubscribe, topics}, %{socket: socket, timeout: timeout} = state) do
-    id = IdProvider.get_id(true)
-    message = Message.unsubscribe(id, topics)
-    :gen_tcp.send(socket, Packet.encode(message))
-    {:noreply, state, timeout}
+  def handle_cast(
+        {:unsubscribe, topics},
+        %{socket: socket, timeout: timeout, ids: id_list} = state
+      ) do
+    with {:ok, id, new_id_list} <- occupy_id(id_list, 1),
+         packet <- Message.unsubscribe(id, topics),
+         e_packet <- Packet.encode(packet),
+         :ok <- :gen_tcp.send(socket, e_packet) do
+      new_state = %{state | ids: new_id_list}
+      {:noreply, new_state, timeout}
+    else
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   # DISCONNECT
   @impl true
   def handle_call(:disconnect, _From, %{socket: socket} = state) do
-    message = Message.disconnect()
-
-    case :gen_tcp.send(socket, Packet.encode(message)) do
-      :ok -> Logger.info("Disconnect packet sent.")
-      {:error, reason} -> Logger.info("Error while sending Disconnect packet. Reason #{reason}")
+    with packet <- Message.disconnect(),
+         message <- Packet.encode(packet),
+         :ok <- :gen_tcp.send(socket, message),
+         :ok <- :gen_tcp.close(socket) do
+      {:stop, :normal, state}
+    else
+      {:error, reason} -> {:stop, reason, state}
     end
-
-    :ok = :gen_tcp.close(socket)
-    {:stop, :normal, state}
   end
 
   # RECEIVER
   @impl true
   def handle_info(
-        {:tcp, _socket, msg},
+        {:tcp, _socket, data},
         %{socket: socket, timeout: timeout} = state
       ) do
-    :inet.setopts(socket, active: :once)
-    %{message: message} = Packet.decode(msg)
-
-    case message do
-      %Message.ConnAck{} ->
-        Logger.info("Mqtt Connected.")
-
-      %Message.Publish{id: id, topic: topic, message: msg, qos: qos} ->
-        Logger.info("Received new message. #{msg} for topic #{topic}")
-
-        case qos do
-          1 ->
-            pub_ack = Message.publish_ack(id)
-            :gen_tcp.send(socket, Packet.encode(pub_ack))
-
-          2 ->
-            pub_rec = Message.publish_receive(id)
-            :gen_tcp.send(socket, Packet.encode(pub_rec))
-
-          _ ->
-            :ok
-        end
-
-      # this will only call when QoS = 1, we need to free the id.
-      %Message.PubAck{id: id} ->
-        IdProvider.free_id(id)
-        Logger.info("Publish successful.")
-
-      # this will only call when QoS = 2
-      %Message.PubRec{id: id} ->
-        pub_rel_msg = Message.publish_release(id)
-        :gen_tcp.send(socket, Packet.encode(pub_rel_msg))
-
-      %Message.PubRel{id: id} ->
-        pub_comp_msg = Message.publish_complete(id)
-        :gen_tcp.send(socket, Packet.encode(pub_comp_msg))
-
-      # this will only call when QoS = 2
-      %Message.PubComp{id: id} ->
-        IdProvider.free_id(id)
-
-      %Message.SubAck{id: id} ->
-        IdProvider.free_id(id)
-        Logger.info("Subscription successful.")
-
-      %Message.UnsubAck{id: id} ->
-        IdProvider.free_id(id)
-        Logger.info("Unsubscribe successful.")
-
-      # this is internal use.increase the timeout.
-      %Message.PingResp{} ->
-        :ok
-
-      Err ->
-        Logger.error("Unknown Packet Received.")
-        IO.inspect(Err)
+    with :ok <- :inet.setopts(socket, active: :once),
+         %{message: message} <- Packet.decode(data),
+         {:reply, reply_message, new_state} <- handle_message(state, message),
+         reply_packet <- Packet.encode(reply_message),
+         :ok <- :gen_tcp.send(socket, reply_packet) do
+      {:noreply, new_state, timeout}
+    else
+      {:noreply, new_state} -> {:noreply, new_state, timeout}
+      {:error, reason} -> {:stop, reason}
     end
-
-    {:noreply, state, timeout}
   end
 
   # RECEIVER_END
@@ -233,15 +197,19 @@ defmodule Bus.Mqtt do
   # TIMEOUT, PING_REQ
   @impl true
   def handle_info(:timeout, %{socket: socket, timeout: timeout} = state) do
-    message = Message.ping_request()
-    :gen_tcp.send(socket, Packet.encode(message))
-    {:noreply, state, timeout}
+    with message <- Message.ping_request(),
+         packet <- Packet.encode(message),
+         :ok <- :gen_tcp.send(socket, packet) do
+      {:noreply, state, timeout}
+    else
+      {:error, reason} -> {:stop, reason, state}
+    end
   end
 
   # DISCONNECT, #END_OF_PROCESS
   @impl true
   def handle_info({:tcp_closed, socket}, %{socket: socket} = state) do
-    {:stop, "TCP connection closed.", state}
+    {:stop, :nornal, state}
   end
 
   # END_OF_PROCESS
@@ -258,6 +226,97 @@ defmodule Bus.Mqtt do
     else
       # we will send pingreq before 5 sec of timeout.
       (keep_alive - 5) * 1000
+    end
+  end
+
+  #### This will return updated map.
+  defp free_id(state, id) do
+    Map.delete(state, id)
+  end
+
+  #### Get next available ID
+  defp occupy_id(state, pos) when is_integer(pos) do
+    cond do
+      pos > 65535 ->
+        {:error, "Reached at maximum."}
+
+      true ->
+        case Map.get(state, pos) do
+          nil ->
+            new_state = Map.put(state, pos, true)
+            {:ok, pos, new_state}
+
+          _val ->
+            occupy_id(state, pos + 1)
+        end
+    end
+  end
+
+  # Process the packet.
+  defp handle_message(%{ids: id_list} = state, message) do
+    case message do
+      %Message.ConnAck{} ->
+        Logger.info("Mqtt Connected.")
+        {:noreply, state}
+
+      %Message.Publish{id: id, topic: topic, message: msg, qos: qos} ->
+        Logger.info("Received new message. #{msg} for topic #{topic}")
+
+        case qos do
+          1 ->
+            pub_ack = Message.publish_ack(id)
+            {:reply, pub_ack, state}
+
+          2 ->
+            pub_rec = Message.publish_receive(id)
+            {:reply, pub_rec, state}
+
+          _ ->
+            :ok
+        end
+
+      # this will only call when QoS = 1, we need to free the id.
+      %Message.PubAck{id: id} ->
+        new_list = free_id(id_list, id)
+        new_state = %{state | ids: new_list}
+        Logger.info("Publish successful.")
+        {:noreply, new_state}
+
+      # this will only call when QoS = 2
+      %Message.PubRec{id: id} ->
+        pub_rel_msg = Message.publish_release(id)
+        {:reply, pub_rel_msg, state}
+
+      %Message.PubRel{id: id} ->
+        pub_comp_msg = Message.publish_complete(id)
+        {:reply, pub_comp_msg, state}
+
+      # this will only call when QoS = 2
+      %Message.PubComp{id: id} ->
+        new_list = free_id(id_list, id)
+        new_state = %{state | ids: new_list}
+        {:noreply, new_state}
+
+      %Message.SubAck{id: id} ->
+        new_list = free_id(id_list, id)
+        new_state = %{state | ids: new_list}
+        Logger.info("Subscription successful.")
+        {:noreply, new_state}
+
+      %Message.UnsubAck{id: id} ->
+        new_list = free_id(id_list, id)
+        new_state = %{state | ids: new_list}
+        Logger.info("Unsubscribe successful.")
+        {:noreply, new_state}
+
+      %Message.PingResp{} ->
+        Logger.info("Ping response received.")
+        {:noreply, state}
+
+      err ->
+        Logger.error("Unknown Packet Received.")
+        IO.inspect(err)
+        {:error, err}
     end
   end
 end
