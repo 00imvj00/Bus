@@ -19,7 +19,7 @@ defmodule Bus.Mixfile do
   end
 
   defp deps do
-    [{:ex_doc, "~> 0.12", only: :dev, runtime: false}, {:ex_mqtt, "~> 0.1", runtime: false}]
+    [{:ex_doc, "~> 0.12", only: :dev, runtime: false}, {:ex_mqtt, "~> 0.2.0", runtime: false}]
   end
 
   defp description do
